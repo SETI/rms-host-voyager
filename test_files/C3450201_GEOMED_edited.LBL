@@ -1,0 +1,75 @@
+PDS_VERSION_ID                  = PDS3
+RECORD_TYPE                     = FIXED_LENGTH
+RECORD_BYTES                    = 2000
+FILE_RECORDS                    = 1001
+^VICAR_HEADER                   = ("C3450201_GEOMED_edited.IMG", 1)
+^IMAGE                          = ("C3450201_GEOMED_edited.IMG", 2)
+
+DATA_SET_ID                     = "VG1/VG2-S-ISS-2/3/4/6-PROCESSED-V1.1"
+PRODUCT_ID                      = "C3450201_GEOMED_edited.IMG"
+PRODUCT_CREATION_TIME           = 2012-05-01T16:00:00
+SOURCE_PRODUCT_ID               = ("C3450201_CALIB.IMG",
+                                   "C3450201_GEOMA.DAT")
+PRODUCT_TYPE                    = GEOMETRICALLY_CORRECTED_IMAGE
+
+/* Image Description  */
+
+INSTRUMENT_HOST_NAME            = "VOYAGER 1"
+INSTRUMENT_HOST_ID              = VG1
+INSTRUMENT_NAME                 = "IMAGING SCIENCE SUBSYSTEM - NARROW ANGLE"
+INSTRUMENT_ID                   = "ISSN"
+MISSION_PHASE_NAME              = "SATURN ENCOUNTER"
+TARGET_NAME                     = "SATURN"
+IMAGE_ID                        = "0469S1-015"
+IMAGE_NUMBER                    = "34502.01"
+IMAGE_TIME                      = 1980-10-29T05:57:22.00
+EARTH_RECEIVED_TIME             = 1980-10-29T07:35:06
+SCAN_MODE_ID                    = "5:1"
+SHUTTER_MODE_ID                 = "NAONLY"
+GAIN_MODE_ID                    = "LOW"
+EDIT_MODE_ID                    = "1:1"
+FILTER_NAME                     = "VIOLET"
+FILTER_NUMBER                   = "1"
+EXPOSURE_DURATION               = 1.920 <SECOND>
+
+START_TIME                      = 1980-10-29T05:57:20.08
+STOP_TIME                       = 1980-10-29T05:57:22.00
+SPACECRAFT_CLOCK_START_COUNT    = "34502:00:768"
+SPACECRAFT_CLOCK_STOP_COUNT     = "34502:01:001"
+
+NOTE                            = "NONE"
+
+DESCRIPTION                     = "This image is the result of geometrically
+correcting the corresponding CALIB image (C3450201_CALIB.IMG). It was created
+using the VICAR software package on a Compaq Alpha running OpenVMS. Routine
+GEOMA was used to remove the instrinsic distortion of the Voyager cameras by
+resampling the image onto a 1000x1000 grid. The routine uses the tabulation of
+reseau marking locations found in the corresponding RESLOC output file
+C3450201_GEOMA.DAT.
+
+See file DOCUMENT/PROCESSING.TXT for more information about the image
+processing history."
+
+OBJECT                          = VICAR_HEADER
+  HEADER_TYPE                   = VICAR
+  BYTES                         = 2000
+  RECORDS                       = 1
+  INTERCHANGE_FORMAT            = ASCII
+  DESCRIPTION                   = "VICAR format label for the image."
+END_OBJECT                      = VICAR_HEADER
+
+OBJECT                          = IMAGE
+  LINES                         = 1000
+  LINE_SAMPLES                  = 1000
+  SAMPLE_TYPE                   = LSB_INTEGER
+  SAMPLE_BITS                   = 16
+  SAMPLE_DISPLAY_DIRECTION      = RIGHT
+  LINE_DISPLAY_DIRECTION        = DOWN
+  HORIZONTAL_PIXEL_FOV          = 4.4960E-04 <DEGREE>
+  VERTICAL_PIXEL_FOV            = 4.4960E-04 <DEGREE>
+  HORIZONTAL_FOV                = 0.4496     <DEGREE>
+  VERTICAL_FOV                  = 0.4496     <DEGREE>
+  REFLECTANCE_SCALING_FACTOR    = 3.3450E-04
+END_OBJECT                      = IMAGE
+
+END

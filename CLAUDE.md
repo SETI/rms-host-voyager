@@ -57,17 +57,32 @@ until this repo has the equivalent.
 - `host_voyager/__init__.py` imports the hosts lazily, through a PEP 562 `__getattr__`, so
   that importing `host_voyager` does not import oops. Keep any import of
   `host_voyager.oops` out of `host_voyager/__init__.py`.
-- Kernels are furnished through `spicedb` (`furnish_inst`, `furnish_ck`, `furnish_spk` for
-  spacecraft -31 and -32), as in Cassini and in the rms-oops host, not through a fixed list
-  as in Galileo. Nothing is loaded at import time; `VoyagerISS.initialize()` runs on first
-  use.
+- Kernels are furnished through `spicedb` (`furnish_inst`, `furnish_ck`, `furnish_spk`
+  for spacecraft -31 and -32), as in Cassini and in the rms-oops host, not through a fixed
+  list as in Galileo. Nothing is loaded at import time; `VoyagerISS.initialize()` runs on
+  first use.
 - The default frame is the registered chain that `initialize()` builds: a
   `SpiceType1Frame` on `VG{n}_SCAN_PLATFORM`, then a fixed `Cmatrix` to
-  `VOYAGER{n}_ISS_{NAC|WAC}`. The rms-oops host instead sampled the C kernel once per image
-  into an unregistered `Cmatrix`, with `action=`/`omit=` warnings when it was missing;
-  neither the per-image matrix nor those options are carried over.
-- `from_index()` reads the preexisting VGISS supplemental index beside each volume index,
-  through `oops.Host._read_index_rows()`.
+  `VOYAGER{n}_ISS_{NAC|WAC}`. The rms-oops host instead sampled the C kernel once per
+  image into an unregistered `Cmatrix`, with `action=`/`omit=` warnings when it was
+  missing; neither the per-image matrix nor those options are carried over.
+- `from_index()` accepts only a `VGISS_xxxx_raw_image_index.lbl`, one row per RAW image,
+  never the full `VGISS_xxxx_index.lbl` (one row per label: RAW, CLEANED, CALIB, GEOMED
+  and the reseau and tiepoint tables), because OPUS archives only the raw images. The
+  preexisting `VGISS_xxxx_supplemental_index.lbl` matches the raw image index row for
+  row, so the two join through `oops.Host._read_index_rows()`. The default
+  `oops.Host.SUPPLEMENT` search would look for `..._raw_image_supplemental_index`, so the
+  host names the supplement itself by replacing `_raw_image_index` with
+  `_supplemental_index`. The supplement adds `START_TIME` and `STOP_TIME` with fractional
+  seconds; the index's `IMAGE_TIME` has whole seconds.
+- VGISS indexes name the volume in `VOLUME_NAME`, not `VOLUME_ID`, and the camera in
+  `INSTRUMENT_NAME` ("NARROW ANGLE CAMERA" or "WIDE ANGLE CAMERA"). The index label itself
+  identifies no host or instrument, so detection relies on `_detect_in_row()`.
+- `test_files/` holds cut-down copies of real VGISS_6109 products from
+  <https://pds-rings.seti.org/holdings/>: the first 30 rows of the raw image and
+  supplemental indexes, which include C3450201 and both cameras; the C3450201 RAW and
+  GEOMED labels; and the GEOMED image truncated after its VICAR header. Their `_edited`
+  names carry through the labels' pointers.
 - Labels name the spacecraft in `INSTRUMENT_HOST_NAME` ("VOYAGER 1") and the camera in
   `INSTRUMENT_ID` (`ISSN`/`ISSW`). `IMAGE_TIME` and `STOP_TIME` are the shutter close, and
   `EXPOSURE_DURATION` is in seconds in a label but milliseconds in the VICAR header.
