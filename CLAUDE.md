@@ -61,6 +61,14 @@ until this repo has the equivalent.
   for spacecraft -31 and -32), as in Cassini and in the rms-oops host, not through a fixed
   list as in Galileo. Nothing is loaded at import time; `VoyagerISS.initialize()` runs on
   first use.
+- `_Voyager` in `_voyager.py` is never instantiated; its state is in class attributes.
+  `initialize()` furnishes the C kernels and the encounter SP kernels (by name pattern,
+  `%JUP%` etc.) and defines the `VOYAGER1`/`VOYAGER2` Paths; `load_instruments()`
+  furnishes the IK, FK and SCLK kernels of both spacecraft. Galileo's month-by-month
+  kernel tables are deliberately absent. `used_kernels()` converts the observation times
+  to TAI, which is what `spicedb.used_basenames()` compares; Galileo passes TDB.
+- `TIMELINE` assigns each time to an encounter with the boundaries the rms-oops host used
+  for VICAR files (1980, 1983, 1987); they fall in cruise, so they serve both spacecraft.
 - The default frame is the registered chain that `initialize()` builds: a
   `SpiceType1Frame` on `VG{n}_SCAN_PLATFORM`, then a fixed `Cmatrix` to
   `VOYAGER{n}_ISS_{NAC|WAC}`. The rms-oops host instead sampled the C kernel once per
