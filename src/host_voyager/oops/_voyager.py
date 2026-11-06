@@ -25,6 +25,16 @@ for _phase in TIMELINE:
 _ALL_PLANETS = ['MERCURY', 'VENUS', 'EARTH', 'MARS', 'JUPITER', 'SATURN', 'URANUS',
                 'NEPTUNE']
 
+# NAIF's merged trajectory of each spacecraft from launch through 2021, relative to the
+# root of the SPICE file tree, with its release date. The encounter SP kernels cover
+# only weeks around each closest approach, but the cameras imaged each planet for months
+# before it, so these fill the gaps. Before 1986 (Voyager 1) and 1989 (Voyager 2) they
+# hold the same trajectories as NAIF's longer merged files, which are inferior after.
+CRUISE_SPKS = {
+    1: ('Voyager/SPK/voyager_1.ST+1991_a54418u.merged.bsp', '2013-01-25T16:12:00'),
+    2: ('Voyager/SPK/voyager_2.ST+1992_m05208u.merged.bsp', '2013-01-25T16:12:00'),
+}
+
 
 class _Voyager:
     """An instance-free class to hold Voyager-specific parameters.
@@ -43,7 +53,7 @@ class _Voyager:
         initialized (bool): True after :meth:`initialize` has been called.
     """
 
-    START_TIME = '1979-01-06'
+    START_TIME = '1978-12-01'
     STOP_TIME  = '1989-10-02'
 
     SPACECRAFT_IDS = {1: -31, 2: -32}
@@ -57,8 +67,9 @@ class _Voyager:
     def initialize(planets=None, asof=None, irregulars=True):
         """Initialize the Voyager mission internals.
 
-        Defines the Solar System bodies, furnishes the C kernels and the SP kernels of
-        every encounter for both spacecraft, and defines the Paths of the spacecraft,
+        Defines the Solar System bodies, furnishes the C kernels, the merged cruise
+        trajectories (:data:`CRUISE_SPKS`) and the SP kernels of every encounter for both
+        spacecraft, and defines the Paths of the spacecraft,
         :attr:`PATH_IDS`, relative to the Solar System barycenter. After the first call,
         later calls to this function are ignored.
 
@@ -79,6 +90,11 @@ class _Voyager:
         # Make sure the leap seconds have been loaded
         oops.spice.load_leap_seconds()
 
+        # The cruise trajectories go first: the planetary and encounter kernels furnished
+        # after them take precedence, the planetary ones over the planet barycenters that
+        # NAIF merged into these files
+        _Voyager._furnish_cruise_spks(asof)
+
         Body.define_solar_system(_Voyager.START_TIME, _Voyager.STOP_TIME, asof=asof,
                                  planets=planets, irregulars=irregulars)
 
@@ -93,6 +109,39 @@ class _Voyager:
             _ = oops.path.SpicePath(f'VOYAGER {vgr}', path_id=path_id)
 
         _Voyager.initialized = True
+
+    @staticmethod
+    def _furnish_cruise_spks(asof):
+        """Furnish the merged trajectory of each spacecraft, :data:`CRUISE_SPKS`.
+
+        The files need not be in the spicedb database. Only their spacecraft segments
+        are recorded, so :meth:`used_kernels` names them for the spacecraft alone, not
+        for the planet barycenters they also hold.
+
+        Parameters:
+            asof (str | None): A date-time as :meth:`_format_asof` returns it; a file
+                released after it is skipped. None to furnish both.
+        """
+
+        # The records are built here from the files' own coverage, rather than by
+        # spicedb.kernels_from_filespec(), which fails on an SPK that is not in the
+        # database: it unpacks the flat coverage window of cspyce.spkcov() as pairs.
+        prefix = spicedb.get_spice_filecache_prefix()
+        kernels = []
+        for (vgr, (filespec, release)) in CRUISE_SPKS.items():
+            if asof is not None and release > asof:
+                continue
+            naif_id = _Voyager.SPACECRAFT_IDS[vgr]
+            local_path = prefix.retrieve(filespec)
+            coverage = cspyce.spkcov(str(local_path), naif_id)
+            for (start_tdb, stop_tdb) in coverage.as_intervals():
+                (start_time, stop_time) = (julian.iso_from_tai(julian.tai_from_tdb(t))
+                                           for t in (start_tdb, stop_tdb))
+                kernels.append(spicedb.KernelInfo([f'VG{vgr}-SPK-CRUISE', 'V1', 'SPK',
+                                                   filespec, start_time, stop_time,
+                                                   release, naif_id, 100, None]))
+
+        spicedb.furnish_kernels(kernels, fast=True)
 
     @staticmethod
     def reset():

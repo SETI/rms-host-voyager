@@ -63,7 +63,12 @@ until this repo has the equivalent.
 - `_Voyager` in `_voyager.py` is never instantiated; its state is in class attributes.
   `initialize()` furnishes the C kernels and the encounter SP kernels (by name pattern,
   `%JUP%` etc.) and defines the `VOYAGER1`/`VOYAGER2` Paths; `load_instruments()`
-  furnishes the IK, FK and SCLK kernels of both spacecraft. Galileo's month-by-month
+  furnishes the IK, FK and SCLK kernels of both spacecraft. The encounter SPKs cover only
+  weeks around closest approach, so `initialize()` first furnishes NAIF's merged cruise
+  trajectories (`CRUISE_SPKS`, by fixed path; they are not in `SPICE.db`). Furnished
+  first, they yield to the planetary and encounter kernels, including for the planet
+  barycenters NAIF merged into them; only their spacecraft segments are recorded, so
+  `used_kernels()` names them for the spacecraft alone. Galileo's month-by-month
   kernel tables are deliberately absent. `used_kernels()` converts the observation times
   to TAI, which is what `spicedb.used_basenames()` compares; Galileo passes TDB.
 - `TIMELINE` assigns each time to an encounter with the boundaries the rms-oops host used

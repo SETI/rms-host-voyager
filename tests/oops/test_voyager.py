@@ -49,7 +49,7 @@ def test_encounter(iso: str, planet: str) -> None:
 
 def test_initialize_defines_the_solar_system(fake_spice: FakeSpice) -> None:
     _Voyager.initialize(planets=[6], asof='2000-01-01', irregulars=False)
-    assert fake_spice.solar_system == [(('1979-01-06', '1989-10-02'),
+    assert fake_spice.solar_system == [(('1978-12-01', '1989-10-02'),
                                         {'asof': '2000-01-01T00:00:00', 'planets': [6],
                                          'irregulars': False})]
     assert fake_spice.leap_seconds == 1
@@ -82,15 +82,64 @@ def test_initialize_furnishes_the_encounter_spks(fake_spicedb: FakeSpiceDB) -> N
 def test_initialize_formats_asof_for_spicedb(fake_spicedb: FakeSpiceDB) -> None:
     _Voyager.initialize(asof='1995-03-04 12:00')
     asofs = {kwargs['asof'] for (name, _, kwargs) in fake_spicedb.calls
-             if name.startswith('furnish')}
+             if name in ('furnish_ck', 'furnish_spk')}
     assert asofs == {'1995-03-04T12:00:00'}
 
 
 def test_initialize_opens_and_closes_the_database(fake_spicedb: FakeSpiceDB) -> None:
     _Voyager.initialize()
     names = [name for (name, _, _) in fake_spicedb.calls]
-    assert names[0] == 'open_db'
+    assert names.index('open_db') < names.index('furnish_ck')
     assert names[-1] == 'close_db'
+
+
+CRUISE_1 = 'Voyager/SPK/voyager_1.ST+1991_a54418u.merged.bsp'
+CRUISE_2 = 'Voyager/SPK/voyager_2.ST+1992_m05208u.merged.bsp'
+
+
+def test_initialize_furnishes_the_cruise_spks(fake_spice: FakeSpice,
+                                              fake_spicedb: FakeSpiceDB) -> None:
+    """Each merged file is read locally for its spacecraft's coverage, and furnished by
+    its relative path with a record for that spacecraft alone."""
+
+    _Voyager.initialize()
+    assert fake_spice.spkcov == [('/fake/SPICE/' + CRUISE_1, -31),
+                                 ('/fake/SPICE/' + CRUISE_2, -32)]
+    (args, kwargs) = fake_spicedb.named('furnish_kernels')[0]
+    assert kwargs == {'fast': True}
+    assert [(spice_id, filespec, start[:10], stop[:10])
+            for (spice_id, filespec, start, stop) in args[0]] == [
+        (-31, CRUISE_1, '1977-09-08', '2021-01-01'),
+        (-32, CRUISE_2, '1977-08-23', '2021-01-01')]
+
+
+def test_initialize_furnishes_the_cruise_spks_first(
+        fake_spicedb: FakeSpiceDB, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The planetary and encounter kernels are furnished after the cruise ones, and so
+    take precedence over them."""
+
+    furnished_before: list[int] = []
+    monkeypatch.setattr(
+        oops.Body, 'define_solar_system',
+        staticmethod(lambda *args, **kwargs: furnished_before.append(
+            len(fake_spicedb.named('furnish_kernels')))))
+    _Voyager.initialize()
+    assert furnished_before == [1]
+    names = [name for (name, _, _) in fake_spicedb.calls]
+    assert names.index('furnish_kernels') < names.index('furnish_spk')
+
+
+@pytest.mark.parametrize(('asof', 'furnished'), [
+    ('2013-01-01', []),
+    ('2014-01-01', [CRUISE_1, CRUISE_2]),
+])
+def test_initialize_cruise_spks_honor_asof(fake_spicedb: FakeSpiceDB, asof: str,
+                                           furnished: list[str]) -> None:
+    """A merged file released after `asof` is skipped."""
+
+    _Voyager.initialize(asof=asof)
+    ((args, _),) = fake_spicedb.named('furnish_kernels')
+    assert [filespec for (_, filespec, _, _) in args[0]] == furnished
 
 
 def test_initialize_runs_once(fake_spice: FakeSpice, fake_spicedb: FakeSpiceDB) -> None:

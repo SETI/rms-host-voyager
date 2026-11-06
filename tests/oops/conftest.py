@@ -9,6 +9,7 @@ equivalents. Everything else, including oops itself, runs for real.
 """
 
 import pathlib
+import types
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -46,6 +47,15 @@ PARTITION_EPOCHS = {
 }
 PARTITION_EPOCHS[3] = PARTITION_EPOCHS[2] + CYCLE_SECONDS
 N_PARTITIONS = 3
+
+# The coverage of each spacecraft in its fake merged cruise SPK, in seconds TDB: whole
+# days, from 1977-09-08 or 1977-08-23 to 2021-01-01
+CRUISE_COVERAGE = {
+    -31: (julian.tdb_from_tai(julian.tai_from_iso('1977-09-08')),
+          julian.tdb_from_tai(julian.tai_from_iso('2021-01-01'))),
+    -32: (julian.tdb_from_tai(julian.tai_from_iso('1977-08-23')),
+          julian.tdb_from_tai(julian.tai_from_iso('2021-01-01'))),
+}
 
 # The fixed rotation from each scan platform to each camera
 PLATFORM_TO_CAMERA_ANGLE = 0.1
@@ -136,9 +146,29 @@ class FakeSpiceDB:
         self._record('used_basenames', *args, **kwargs)
         return self.used
 
+    def get_spice_filecache_prefix(self) -> 'FakePrefix':
+        return FakePrefix()
+
+    def furnish_kernels(self, kernels: list[Any], **kwargs: Any) -> list[str]:
+        """Record each kernel as its (spice_id, filespec)."""
+
+        self._record('furnish_kernels', [(k.spice_id, k.filespec, k.start_time,
+                                          k.stop_time) for k in kernels], **kwargs)
+        return []
+
+
+class FakePrefix:
+    """The SPICE file cache prefix, retrieving each file to a fake local path."""
+
+    ROOT = pathlib.Path('/fake/SPICE')
+
+    def retrieve(self, filespec: str) -> pathlib.Path:
+        return self.ROOT / filespec
+
 
 _SPICEDB_FUNCTIONS = ('open_db', 'close_db', 'furnish_inst', 'furnish_ck', 'furnish_spk',
-                      'used_basenames')
+                      'used_basenames', 'get_spice_filecache_prefix',
+                      'furnish_kernels')
 
 
 @dataclass
@@ -153,6 +183,7 @@ class FakeSpice:
         ckgp (list[tuple[int, float, float, str]]): The arguments of each `cspyce.ckgp`.
         missing (set[float]): Ticks at which `cspyce.ckgp` finds no record.
         pxform (list[tuple[str, str]]): The (from, to) frames of each `cspyce.pxform`.
+        spkcov (list[tuple[str, int]]): The (file, body) of each `cspyce.spkcov`.
     """
 
     leap_seconds: int = 0
@@ -162,6 +193,7 @@ class FakeSpice:
     ckgp: list[tuple[int, float, float, str]] = field(default_factory=list)
     missing: set[float] = field(default_factory=set)
     pxform: list[tuple[str, str]] = field(default_factory=list)
+    spkcov: list[tuple[str, int]] = field(default_factory=list)
 
 
 @pytest.fixture(autouse=True)
@@ -210,6 +242,10 @@ def fake_spice(monkeypatch: pytest.MonkeyPatch) -> FakeSpice:
             raise OSError('SPICE(CKINSUFFDATA) -- ckgp -- insufficient C kernel data')
         return (record_matrix(ticks), ticks)
 
+    def spkcov(filespec: str, naif_id: int) -> types.SimpleNamespace:
+        fake.spkcov.append((filespec, naif_id))
+        return types.SimpleNamespace(as_intervals=lambda: [CRUISE_COVERAGE[naif_id]])
+
     def pxform(source: str, target: str, et: float) -> np.ndarray:
         fake.pxform.append((source, target))
         return rotation(0, PLATFORM_TO_CAMERA_ANGLE)
@@ -222,6 +258,7 @@ def fake_spice(monkeypatch: pytest.MonkeyPatch) -> FakeSpice:
     monkeypatch.setattr(cspyce, 'scpart', scpart)
     monkeypatch.setattr(cspyce, 'ckgp', ckgp)
     monkeypatch.setattr(cspyce, 'pxform', pxform)
+    monkeypatch.setattr(cspyce, 'spkcov', spkcov)
 
     monkeypatch.setattr(oops.Path, '_PATH_REGISTRY', dict(oops.Path._PATH_REGISTRY))
     monkeypatch.setattr(oops.Path, '_PATH_CACHE', dict(oops.Path._PATH_CACHE))
