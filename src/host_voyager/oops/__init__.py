@@ -3,6 +3,9 @@
 ##########################################################################################
 """The Voyager hosts for oops; importing each instrument module registers its host."""
 
-__all__ = []
+# Importing each instrument module registers its host with oops.Host
+from .iss import VoyagerISS
+
+__all__ = ['VoyagerISS']
 
 ##########################################################################################

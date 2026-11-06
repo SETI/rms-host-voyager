@@ -199,6 +199,45 @@ class _Voyager:
         return target
 
     @staticmethod
+    def sclk_ticks(vgr, count, partition=None, near=None):
+        """Encode a Voyager spacecraft clock count as SPICE clock ticks.
+
+        The FDS clock wraps every 65536 FDS hours, so the same count recurs in each clock
+        partition. Without a partition, the one in which the count falls nearest a given
+        time is used. The clock kernels must have been furnished, by
+        :meth:`load_instruments`.
+
+        Parameters:
+            vgr (int): The spacecraft number, 1 or 2.
+            count (str): The FDS count, "hhhhh:mm:ddd".
+            partition (int, optional): The clock partition; None to choose one by `near`.
+            near (float, optional): The time in seconds TDB near which the count falls;
+                required if `partition` is None.
+
+        Returns:
+            float: The encoded clock ticks.
+
+        Raises:
+            ValueError: If the count falls in no partition, or not in the one given.
+        """
+
+        naif_id = _Voyager.SPACECRAFT_IDS[vgr]
+        if partition is not None:
+            return cspyce.scencd(naif_id, f'{partition}/{count}')
+
+        candidates = []
+        for part in range(1, len(cspyce.scpart(naif_id)[0]) + 1):
+            try:
+                ticks = cspyce.scencd(naif_id, f'{part}/{count}')
+            except ValueError:      # the count is outside this partition
+                continue
+            candidates.append((abs(cspyce.sct2e(naif_id, ticks) - near), ticks))
+
+        if not candidates:
+            raise ValueError(f'Voyager {vgr} clock count {count} is in no partition')
+        return min(candidates)[1]
+
+    @staticmethod
     def _format_asof(asof):
         """An "as of" date reformatted as the ISO date-time spicedb expects, or None."""
 

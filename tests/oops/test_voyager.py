@@ -8,7 +8,8 @@ from typing import Any
 import julian
 import oops
 import pytest
-from conftest import FakeSpice, FakeSpiceDB
+from conftest import (CLOCK_COUNT, CYCLE_SECONDS, STOP_TIME, FakeSpice, FakeSpiceDB,
+                      fake_scencd)
 from oops.body import Body
 
 from host_voyager.oops._voyager import TIMELINE, _Voyager
@@ -198,5 +199,33 @@ def test_used_kernels_without_cks(fake_spicedb: FakeSpiceDB) -> None:
     types = _used_kwargs(fake_spicedb, ck=False)['types']
     assert 'CK' not in types
     assert 'SPK' in types
+##########################################################################################
+# sclk_ticks()
+##########################################################################################
+
+_STOP_TDB = julian.tdb_from_iso(STOP_TIME)
+
+
+def test_sclk_ticks_in_a_given_partition() -> None:
+    assert _Voyager.sclk_ticks(1, CLOCK_COUNT, 3) == fake_scencd(-31, f'3/{CLOCK_COUNT}')
+
+
+@pytest.mark.parametrize(('near', 'partition'), [
+    (_STOP_TDB, 2), (_STOP_TDB + CYCLE_SECONDS, 3), (_STOP_TDB + 0.6 * CYCLE_SECONDS, 3)],
+    ids=['stop-time', 'one-cycle-later', 'nearer-the-later'])
+def test_sclk_ticks_partition_nearest_a_time(near: float, partition: int) -> None:
+    assert _Voyager.sclk_ticks(2, CLOCK_COUNT, near=near) == fake_scencd(
+        -32, f'{partition}/{CLOCK_COUNT}')
+
+
+def test_sclk_ticks_rejects_a_count_in_no_partition(monkeypatch: pytest.MonkeyPatch
+                                                    ) -> None:
+    def no_partition(naif_id: int, count: str) -> float:
+        raise ValueError('SPICE(NOTINPART)')
+
+    monkeypatch.setattr('cspyce.scencd', no_partition)
+    with pytest.raises(ValueError, match=f'Voyager 1 clock count {CLOCK_COUNT} is in no '
+                                         'partition'):
+        _Voyager.sclk_ticks(1, CLOCK_COUNT, near=_STOP_TDB)
 
 ##########################################################################################

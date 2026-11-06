@@ -6,8 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `rms-oops/src/oops/hosts/voyager/` to the newer `oops.Host` / `oops.host` API, part of
 splitting the mission hosts out of rms-oops (see the siblings `rms-host-galileo` and
 `rms-host-cassini`). Galileo, a single VICAR imaging camera, is the closest model. ISS is
-not yet ported: the repository holds the packaging, CI, scripts and docs, and
-`host_voyager` exports nothing.
+ported, as `VoyagerISS`.
 
 ## Standards
 
@@ -69,11 +68,25 @@ until this repo has the equivalent.
   to TAI, which is what `spicedb.used_basenames()` compares; Galileo passes TDB.
 - `TIMELINE` assigns each time to an encounter with the boundaries the rms-oops host used
   for VICAR files (1980, 1983, 1987); they fall in cruise, so they serve both spacecraft.
-- The default frame is the registered chain that `initialize()` builds: a
-  `SpiceType1Frame` on `VG{n}_SCAN_PLATFORM`, then a fixed `Cmatrix` to
-  `VOYAGER{n}_ISS_{NAC|WAC}`. The rms-oops host instead sampled the C kernel once per
-  image into an unregistered `Cmatrix`, with `action=`/`omit=` warnings when it was
-  missing; neither the per-image matrix nor those options are carried over.
+- **Never look Voyager ISS pointing up by time.** The scan platform C kernels hold one
+  record per image, stamped at the image's `SPACECRAFT_CLOCK_STOP_COUNT` (its FDS image
+  number, `hhhhh:mm:001`), which is often whole FDS minutes (48 s each; 768.7 s for
+  C3450201) after the true shutter close, `STOP_TIME`. A time lookup near `STOP_TIME`,
+  whether `ckgp` at mid-exposure as in the rms-oops host or a `SpiceType1Frame`, returns a
+  neighboring image's record. `docs/pointing.rst` gives the evidence: fits of real images
+  show that the record at the image's own count holds its pointing, and that `STOP_TIME`,
+  not the count, is the shutter time.
+- So the time is `STOP_TIME`, else `IMAGE_TIME`, and never the clock count. The default
+  frame is an unregistered `Cmatrix` relative to J2000, from the record found by the clock
+  count (`_camera_frame()`, tolerance 20 ticks). Labels and VICAR headers give no clock
+  partition; `_Voyager.sclk_ticks()` picks the partition nearest `STOP_TIME`. A VICAR
+  header gives no count; `_clock_count()` derives it from `IMAGE_NUMBER`, which matches
+  for all but five VGISS images. A frame `timeshift` ("F") has no effect on the fixed
+  matrix.
+- An image with no time or (without a `frame` override) no record raises
+  `_UnusableImageError`, a `HostError`, from `from_file()`, and `from_index()` leaves it
+  out. Across VGISS that is 17 images with no time and 2,137 with no record, 1,090 of them
+  in VGISS_8210.
 - `from_index()` accepts only a `VGISS_xxxx_raw_image_index.lbl`, one row per RAW image,
   never the full `VGISS_xxxx_index.lbl` (one row per label: RAW, CLEANED, CALIB, GEOMED
   and the reseau and tiepoint tables), because OPUS archives only the raw images. The
@@ -93,7 +106,14 @@ until this repo has the equivalent.
   names carry through the labels' pointers.
 - Labels name the spacecraft in `INSTRUMENT_HOST_NAME` ("VOYAGER 1") and the camera in
   `INSTRUMENT_ID` (`ISSN`/`ISSW`). `IMAGE_TIME` and `STOP_TIME` are the shutter close, and
-  `EXPOSURE_DURATION` is in seconds in a label but milliseconds in the VICAR header.
+  `EXPOSURE_DURATION` is in seconds in a label but milliseconds in the VICAR header. The
+  index of VGISS_6201 gives the null exposure -99.9999 for one dark frame; the host uses 0.
+- The product type decides the FOV: `GEOMETRICALLY_CORRECTED_IMAGE` is 1000x1000 and
+  undistorted, every other product 800x800 (raw geometry). A VICAR header has no
+  `PRODUCT_TYPE`; `_vicar_to_pds3()` infers it from the VICAR tasks (`GEOMA` means GEOMED).
+- `_TARGET_NAME_REPAIRS`, `_PLANET_TARGETS` and `_TARGET_STARS` in `iss.py` cover every
+  `TARGET_NAME` in the VGISS raw image indexes; the `*999` volumes are cumulative indexes
+  that repeat every row, so leave them out of any survey.
 - Running anything needs SPICE kernels through `spicedb` (`SPICE_PATH`, or
   `$OOPS_RESOURCES/SPICE`, plus `SPICE_SQLITE_DB_NAME`). `spicedb` currently ships inside
   rms-oops.

@@ -9,6 +9,12 @@ Welcome to the Documentation for rms-host-voyager!
 
 .. toctree::
    :maxdepth: 2
+   :caption: Voyager ISS:
+
+   pointing
+
+.. toctree::
+   :maxdepth: 2
    :caption: API Reference:
 
    module

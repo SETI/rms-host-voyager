@@ -10,10 +10,12 @@ host with ``oops.Host``.
 
 import importlib
 
-__all__ = []
+__all__ = ['VoyagerISS']
 
 # Exported name -> the module that defines it
-_LAZY_NAMES = {}
+_LAZY_NAMES = {
+    'VoyagerISS': 'host_voyager.oops',
+}
 
 
 def __getattr__(name):

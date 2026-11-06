@@ -35,9 +35,6 @@ images into OOPS `Snapshot` objects, with the frame, field of view, timing, targ
 light source that each image requires. It is a product of the
 [PDS Ring-Moon Systems Node](https://pds-rings.seti.org).
 
-The package does not yet contain the ISS host; it provides the packaging, tests,
-documentation, and continuous integration that the host is built on.
-
 # Installation
 
 The `host_voyager` module is available via the `rms-host-voyager` package on PyPI and can
@@ -57,6 +54,50 @@ pip install "rms-oops @ git+https://github.com/SETI/rms-oops@mrs_260925_host_reo
 Geometry calculations need the Voyager SPICE kernels, which are read through the kernel
 database of `spicedb`, located by the `SPICE_PATH` environment variable (or
 `$OOPS_RESOURCES/SPICE`) and `SPICE_SQLITE_DB_NAME`.
+
+# Getting Started
+
+Importing `host_voyager.oops` registers the Voyager ISS host with `oops.Host`, which can
+then identify and read any VGISS image, from either its PDS3 label or its VICAR file:
+
+```python
+import oops
+import host_voyager.oops
+
+obs = oops.Host.from_file('VGISS_6109/DATA/C34502XX/C3450201_GEOMED.LBL')
+```
+
+The host class can also be used directly. It reads a raw image index together with the
+supplemental index beside it (here `VGISS_6109_supplemental_index.lbl`), which must
+exist:
+
+```python
+from host_voyager import VoyagerISS
+
+snapshot = VoyagerISS.from_file('VGISS_6109/DATA/C34502XX/C3450201_RAW.IMG')
+snapshots = VoyagerISS.from_index('VGISS_6109_raw_image_index.lbl')
+```
+
+# Features
+
+- `VoyagerISS.from_file()` makes a `Snapshot` from a RAW, CLEANED, CALIB or GEOMED image.
+  A GEOMED image has a 1000x1000 field of view free of the camera's distortion, and every
+  other product an 800x800 one. `astrometry=True` reads no image data.
+- `VoyagerISS.from_index()` makes one `Snapshot` for each row of a raw image index,
+  merging in the columns of the supplemental index. The volume index, which lists every
+  product, is not accepted.
+- The time of an image is its STOP_TIME. Its pointing comes from its own record in the
+  scan platform C kernels, found by its spacecraft clock count rather than by its time,
+  because the records are stamped at the count and the count can fall minutes after the
+  shutter closed. The
+  [timing and pointing page](https://rms-host-voyager.readthedocs.io/en/latest/pointing.html)
+  gives the evidence. An image with no time, or no record, cannot be read; `from_index()`
+  leaves it out.
+- A target named in the label is repaired where it names no body that oops knows, such as
+  the ring planes, and an image of a star uses that star as its light source.
+
+Details are available in the
+[module documentation](https://rms-host-voyager.readthedocs.io/en/latest/module.html).
 
 # Contributing
 
