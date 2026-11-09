@@ -13,8 +13,7 @@ dependencies = [
   "numpy>=2.0",
   "rms-filecache>=2.0.3",
   "rms-julian",
-  # Also provides spicedb.
-  "rms-oops",
+  "rms-oops>=0.4.0",        # 0.4.0 adds the oops.Host API; also provides spicedb
   "rms-pdsparser>=2.3.0",   # 2.3.0 adds as_dict
   "rms-vicar>=1.4.0",       # 1.4.0 adds as_dict
 ]

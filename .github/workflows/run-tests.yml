@@ -23,12 +23,9 @@ jobs:
         with:
           python-version: 3.13
 
-      # The host needs the oops.Host API from the rms-oops mrs_260925_host_reorg branch,
-      # which is not released. Remove the second install once it is on PyPI.
       - name: Install dependencies
         run: |
           python -m pip install -e ".[dev]"
-          python -m pip install --force-reinstall --no-deps "rms-oops @ git+https://github.com/SETI/rms-oops@mrs_260925_host_reorg"
 
       # Ruff is the linter of record for every rule it implements.
       - name: Ruff
@@ -50,8 +47,6 @@ jobs:
         run: |
           MYPYPATH=src mypy tests
 
-      # rms-oops is installed from GitHub rather than PyPI, so pip-audit lists it as
-      # skipped rather than audited.
       - name: pip-audit
         run: |
           pip-audit --skip-editable
@@ -95,11 +90,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      # See the matching step in the lint job.
       - name: Install dependencies
         run: |
           python -m pip install -e ".[dev]"
-          python -m pip install --force-reinstall --no-deps "rms-oops @ git+https://github.com/SETI/rms-oops@mrs_260925_host_reorg"
 
       # The tests need no SPICE kernels or data files; see tests/oops/conftest.py.
       - name: Test with coverage

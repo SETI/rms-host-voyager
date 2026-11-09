@@ -122,12 +122,6 @@ nitpick_ignore_regex = [
     # Napoleon splits a type such as "(bool, optional)" on the comma and looks up each
     # piece, so the trailing "optional" of every optional parameter arrives here.
     (r'py:class', r'optional'),
-    # oops.Host and the oops.host exceptions are not yet in a released oops, so the
-    # published oops inventory has no entry for them. Remove these entries once a release
-    # that has them is on ReadTheDocs.
-    (r'py:class', r'oops\.host\.host_\.Host'),
-    (r'py:meth', r'oops\.Host\..*'),
-    (r'py:exc', r'oops\.host\..*'),
 ]
 
 # MyST-Parser settings
@@ -149,17 +143,18 @@ myst_heading_anchors = 2
 # Each short name is rewritten to the target that intersphinx knows before intersphinx
 # looks it up.
 _SHORT_NAMES = {
-    'FCPath'          : 'filecache.file_cache_path.FCPath',
-    'Pds3Label'       : 'pdsparser.Pds3Label',
-    'VicarLabel'      : 'vicar.VicarLabel',
-    'VicarImage'      : 'vicar.VicarImage',
-    'Observation'     : 'oops.Observation',
-    'Snapshot'        : 'oops.observation.Snapshot',
-    'FOV'             : 'oops.FOV',
-    'Meshgrid'        : 'oops.Meshgrid',
-    'Scalar'          : 'polymath.Scalar',
-    'OopsValueError'  : 'oops.OopsValueError',
-    'oops.LightSource': 'oops.lightsource.LightSource',
+    'FCPath'              : 'filecache.file_cache_path.FCPath',
+    'Pds3Label'           : 'pdsparser.Pds3Label',
+    'VicarLabel'          : 'vicar.VicarLabel',
+    'VicarImage'          : 'vicar.VicarImage',
+    'Observation'         : 'oops.Observation',
+    'Snapshot'            : 'oops.observation.Snapshot',
+    'FOV'                 : 'oops.FOV',
+    'Meshgrid'            : 'oops.Meshgrid',
+    'Scalar'              : 'polymath.Scalar',
+    'OopsValueError'      : 'oops.OopsValueError',
+    'oops.LightSource'    : 'oops.lightsource.LightSource',
+    'oops.Host.from_index': 'oops.host.Host.from_index',
 }
 
 

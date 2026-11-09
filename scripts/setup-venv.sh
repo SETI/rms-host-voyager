@@ -114,12 +114,6 @@ python -m pip install --upgrade pip
 print_info "Installing rms-host-voyager with dev and docs extras"
 python -m pip install -e ".[dev]"
 
-# The host needs the oops.Host API from the rms-oops mrs_260925_host_reorg branch, which
-# is not released. Remove this step once it is on PyPI.
-print_info "Installing rms-oops from its mrs_260925_host_reorg branch"
-python -m pip install --force-reinstall --no-deps \
-    "rms-oops @ git+https://github.com/SETI/rms-oops@mrs_260925_host_reorg"
-
 echo
 print_success "Virtual environment ready at $VENV"
 echo -e "  Activate it with: ${BOLD}source ${VENV#"$PROJECT_ROOT"/}/bin/activate${RESET}"

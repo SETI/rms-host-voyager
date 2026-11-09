@@ -32,10 +32,7 @@ until this repo has the equivalent.
   codespell and PyMarkdown. `ruff format` is disabled. `.github/workflows/run-tests.yml`
   runs the same set. `scripts/setup-venv.sh` builds the `venv/` that the scripts expect;
   set `VENV` to use another.
-- The `oops.Host` API is unreleased. CI, `.readthedocs.yaml` and `scripts/setup-venv.sh`
-  install rms-oops from its `mrs_260925_host_reorg` branch, and `docs/conf.py` ignores the
-  unresolvable `oops.Host` and `oops.host` references. Drop all four once a release has
-  them.
+- The `oops.Host` API arrived in rms-oops 0.4.0, the minimum version in `pyproject.toml`.
 - `docs/conf.py` resolves the short class names in docstrings (`FCPath`, `Observation`,
   ...) through intersphinx with `_SHORT_NAMES`. Add a name there when a nitpicky build
   reports a class from another RMS package.

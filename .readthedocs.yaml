@@ -14,11 +14,6 @@ build:
     # nodejs: "19"
     # rust: "1.64"
     # golang: "1.19"
-  jobs:
-    # The host needs the oops.Host API from the rms-oops mrs_260925_host_reorg branch,
-    # which is not released. Remove this job once it is on PyPI.
-    post_install:
-      - python -m pip install --force-reinstall --no-deps "rms-oops @ git+https://github.com/SETI/rms-oops@mrs_260925_host_reorg"
 
 # Build documentation in the "docs/" directory with Sphinx
 sphinx:
