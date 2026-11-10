@@ -124,6 +124,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VENV="${VENV:-${VENV_PATH:-$PROJECT_ROOT/venv}}"
 
+# The activate script of $VENV: in bin/, or in Scripts/ for a native Windows Python
+venv_activate_path() {
+    if [ ! -f "$VENV/bin/activate" ] && [ -f "$VENV/Scripts/activate" ]; then
+        echo "$VENV/Scripts/activate"
+    else
+        echo "$VENV/bin/activate"
+    fi
+}
+VENV_ACTIVATE="$(venv_activate_path)"
+
 # Track failures and final exit code
 FAILED_CHECKS=()
 EXIT_CODE=0
@@ -385,14 +395,14 @@ run_code_checks() {
         return 0
     fi
 
-    if [ ! -f "$VENV/bin/activate" ]; then
+    if [ ! -f "$VENV_ACTIVATE" ]; then
         print_error "Virtual environment not found at $VENV; run ./scripts/setup-venv.sh"
         [ -n "$status_file" ] && echo "Code - Virtual environment not found" >> "$status_file"
         return 1
     fi
 
     # shellcheck source=/dev/null
-    source "$VENV/bin/activate"
+    source "$VENV_ACTIVATE"
 
     local failed=false
     local failed_checks=""
@@ -526,14 +536,14 @@ run_sphinx_build() {
 
     cd "$PROJECT_ROOT" || exit 1
 
-    if [ ! -f "$VENV/bin/activate" ]; then
+    if [ ! -f "$VENV_ACTIVATE" ]; then
         print_error "Virtual environment not found at $VENV; run ./scripts/setup-venv.sh"
         [ -n "$status_file" ] && echo "Sphinx - Virtual environment not found" >> "$status_file"
         return 1
     fi
 
     # shellcheck source=/dev/null
-    source "$VENV/bin/activate"
+    source "$VENV_ACTIVATE"
 
     print_info "Building documentation (nitpicky, warnings treated as errors)..."
     if (cd docs && make clean && make html SPHINXOPTS="-W -n"); then
@@ -568,14 +578,14 @@ run_markdown_checks() {
 
     cd "$PROJECT_ROOT" || exit 1
 
-    if [ ! -f "$VENV/bin/activate" ]; then
+    if [ ! -f "$VENV_ACTIVATE" ]; then
         print_error "Virtual environment not found at $VENV; run ./scripts/setup-venv.sh"
         [ -n "$status_file" ] && echo "Markdown - Virtual environment not found" >> "$status_file"
         return 1
     fi
 
     # shellcheck source=/dev/null
-    source "$VENV/bin/activate"
+    source "$VENV_ACTIVATE"
 
     local codespell_failed=false
     local pymarkdown_failed=false

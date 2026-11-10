@@ -18,6 +18,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VENV="${VENV:-${VENV_PATH:-$PROJECT_ROOT/venv}}"
+
+# The activate script of $VENV: in bin/, or in Scripts/ for a native Windows Python
+venv_activate_path() {
+    if [ ! -f "$VENV/bin/activate" ] && [ -f "$VENV/Scripts/activate" ]; then
+        echo "$VENV/Scripts/activate"
+    else
+        echo "$VENV/bin/activate"
+    fi
+}
+VENV_ACTIVATE="$(venv_activate_path)"
 DOCS_DIR="$PROJECT_ROOT/docs"
 HTML_INDEX="$DOCS_DIR/_build/html/index.html"
 
@@ -28,13 +38,13 @@ if [ ! -d "$DOCS_DIR" ]; then
     exit 1
 fi
 
-if [ ! -f "$VENV/bin/activate" ]; then
+if [ ! -f "$VENV_ACTIVATE" ]; then
     echo "Error: virtual environment not found at $VENV" >&2
     exit 1
 fi
 
 # shellcheck source=/dev/null
-source "$VENV/bin/activate"
+source "$VENV_ACTIVATE"
 
 echo "Building documentation (nitpicky, warnings treated as errors)..."
 make -C "$DOCS_DIR" html SPHINXOPTS="-W -n"

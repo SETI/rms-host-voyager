@@ -44,6 +44,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VENV="${VENV:-${VENV_PATH:-$PROJECT_ROOT/venv}}"
 
+# The activate script of $VENV: in bin/, or in Scripts/ for a native Windows Python
+venv_activate_path() {
+    if [ ! -f "$VENV/bin/activate" ] && [ -f "$VENV/Scripts/activate" ]; then
+        echo "$VENV/Scripts/activate"
+    else
+        echo "$VENV/bin/activate"
+    fi
+}
+
 RECREATE=false
 PYTHON_CMD=python3
 
@@ -110,7 +119,7 @@ if [ "$RECREATE" = true ] && [ -e "$VENV" ]; then
     rm -rf "$VENV"
 fi
 
-if [ -f "$VENV/bin/activate" ]; then
+if [ -f "$(venv_activate_path)" ]; then
     print_info "Reusing existing virtualenv at $VENV"
 else
     if [ -e "$VENV" ]; then
@@ -121,8 +130,9 @@ else
     "$PYTHON_CMD" -m venv "$VENV"
 fi
 
+VENV_ACTIVATE="$(venv_activate_path)"
 # shellcheck source=/dev/null
-source "$VENV/bin/activate"
+source "$VENV_ACTIVATE"
 
 print_info "Upgrading pip"
 python -m pip install --upgrade pip
@@ -132,5 +142,5 @@ python -m pip install -e ".[dev]"
 
 echo
 print_success "Virtual environment ready at $VENV"
-echo -e "  Activate it with: ${BOLD}source ${VENV#"$PROJECT_ROOT"/}/bin/activate${RESET}"
+echo -e "  Activate it with: ${BOLD}source ${VENV_ACTIVATE#"$PROJECT_ROOT"/}${RESET}"
 echo -e "  Run the checks with: ${BOLD}./scripts/run-all-checks.sh${RESET}"
