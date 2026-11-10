@@ -1,0 +1,25 @@
+# Ruff is the linter of record for everything it implements; see [tool.ruff] in
+# pyproject.toml. Ruff has no rule in the E121-E133 range, so the continuation-line
+# indent checks come from `flake8 --select=E12,E13`.
+[flake8]
+max-line-length: 90
+extend-ignore =
+    # E114 Indentation is not a multiple of four (comment)
+    # E116 Unexpected indentation (comment)
+    # E201 Whitespace after '('
+    # E202 Whitespace before ')'
+    # E203 Whitespace before ':'
+    # E211 Whitespace before '('
+    # E221 Multiple spaces before operator
+    # E222 Multiple spaces after operator
+    # E231 Missing whitespace after ',', ';', or ':'
+    # E241 Multiple spaces after ','
+    # E266 Too many leading '#' for block comment
+    # E272 Multiple spaces before keyword
+    # E305 Expected 2 blank lines after end of function or class
+    E114, E116, E201, E202, E203, E211, E221, E222, E231, E241, E266, E272, E305
+
+per-file-ignores =
+    # F401 module imported but unused
+    # E402 Module level import not at top of file
+    __init__.py: F401, E402
