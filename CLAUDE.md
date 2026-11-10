@@ -64,7 +64,9 @@ until this repo has the equivalent.
   weeks around closest approach, so `initialize()` first furnishes NAIF's merged cruise
   trajectories (`CRUISE_SPKS`, by fixed path; they are not in `SPICE.db`). Furnished
   first, they yield to the planetary and encounter kernels, including for the planet
-  barycenters NAIF merged into them; only their spacecraft segments are recorded, so
+  barycenters NAIF merged into them. SPKs another host furnished earlier are furnished
+  again after them (spicedb's `FURNISHED_ABSPATHS` and `FURNISHED_INFO`, `fast=False`),
+  since the cruise files span 1977-2021. Only their spacecraft segments are recorded, so
   `used_kernels()` names them for the spacecraft alone. Galileo's month-by-month
   kernel tables are deliberately absent. `used_kernels()` converts the observation times
   to TAI, which is what `spicedb.used_basenames()` compares; Galileo passes TDB.
@@ -96,7 +98,10 @@ until this repo has the equivalent.
   row, so the two join through `oops.Host._read_index_rows()`. The default
   `oops.Host.SUPPLEMENT` search would look for `..._raw_image_supplemental_index`, so the
   host names the supplement itself by replacing `_raw_image_index` with
-  `_supplemental_index`. The supplement adds `START_TIME` and `STOP_TIME` with fractional
+  `_supplemental_index`. It does so even for given `row_dicts`, which rejects the rows of
+  a full index from `oops.Host.from_index()`, and joins the supplement by `VOLUME_NAME`
+  and `FILE_SPECIFICATION_NAME` into rows that lack `STOP_TIME`, as that dispatch passes
+  them. The supplement adds `START_TIME` and `STOP_TIME` with fractional
   seconds; the index's `IMAGE_TIME` has whole seconds.
 - VGISS indexes name the volume in `VOLUME_NAME`, not `VOLUME_ID`, and the camera in
   `INSTRUMENT_NAME` ("NARROW ANGLE CAMERA" or "WIDE ANGLE CAMERA"). The index label itself

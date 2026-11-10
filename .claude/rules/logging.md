@@ -5,9 +5,7 @@ description: Generic best practices for logging with PdsLogger (rms-pdslogger), 
 # Logging Best Practices
 
 These practices apply to any project that logs through `pdslogger.PdsLogger`
-(the `rms-pdslogger` package). For the project-specific logger wiring (which
-named loggers exist and how they are configured), see
-`logging_nav`.
+(the `rms-pdslogger` package).
 
 Use `pdslogger.PdsLogger` exclusively. **Never** use the standard Python
 `logging` module to emit log messages, and never call bare `print()` from

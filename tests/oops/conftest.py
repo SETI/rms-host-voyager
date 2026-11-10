@@ -111,10 +111,16 @@ class FakeSpiceDB:
     Attributes:
         calls (list[tuple[str, tuple, dict]]): Each call as (name, args, kwargs).
         used (list[str]): Returned by `used_basenames`.
+        furnished_spks (list[str]): The local paths of the SP kernels already furnished,
+            in load order, as `FURNISHED_ABSPATHS['SPK']`.
+        furnished_info (dict[str, list]): The kernel records of each furnished file,
+            keyed by its basename, as `FURNISHED_INFO`.
     """
 
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = field(default_factory=list)
     used: list[str] = field(default_factory=lambda: ['vg1_issna_v02.ti', 'vg100019.tsc'])
+    furnished_spks: list[str] = field(default_factory=list)
+    furnished_info: dict[str, list[Any]] = field(default_factory=dict)
 
     def _record(self, func: str, /, *args: Any, **kwargs: Any) -> None:
         self.calls.append((func, args, kwargs))
@@ -203,6 +209,8 @@ def fake_spicedb(monkeypatch: pytest.MonkeyPatch) -> FakeSpiceDB:
     fake = FakeSpiceDB()
     for name in _SPICEDB_FUNCTIONS:
         monkeypatch.setattr(spicedb, name, getattr(fake, name))
+    monkeypatch.setattr(spicedb, 'FURNISHED_ABSPATHS', {'SPK': fake.furnished_spks})
+    monkeypatch.setattr(spicedb, 'FURNISHED_INFO', fake.furnished_info)
     return fake
 
 

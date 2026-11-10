@@ -661,6 +661,29 @@ def test_from_index_requires_a_raw_image_index(tmp_path: pathlib.Path) -> None:
         VoyagerISS.from_index(copy)
 
 
+def test_from_index_rejects_the_rows_of_a_volume_index(tmp_path: pathlib.Path) -> None:
+    copy = tmp_path / 'VGISS_6109_index.lbl'
+    shutil.copy(INDEX, copy)
+    shutil.copy(INDEX.with_suffix('.tab'), tmp_path)
+    rows = VoyagerISS._read_index_rows(INDEX, supplement=SUPPLEMENT)
+    with pytest.raises(oops.host.HostIndexError, match='needs a raw image index'):
+        VoyagerISS.from_index(copy, row_dicts=rows)
+
+
+def test_from_index_merges_the_supplement_into_given_rows() -> None:
+    rows = VoyagerISS._read_index_rows(INDEX)[9:11]
+    obs = VoyagerISS.from_index(INDEX, row_dicts=rows)
+    assert [o.dict['STOP_TIME'] for o in obs] == [STOP_TIME, '1980-10-29T06:02:10.00']
+
+
+def test_from_index_requires_a_supplement_row_for_each_given_row() -> None:
+    rows = VoyagerISS._read_index_rows(INDEX)[9:10]
+    rows[0]['FILE_SPECIFICATION_NAME'] = 'DATA/C34502XX/C3450299_RAW.LBL'
+    with pytest.raises(oops.host.HostIndexError,
+                       match=r'no row for VGISS_6109/DATA/C34502XX/C3450299_RAW\.LBL'):
+        VoyagerISS.from_index(INDEX, row_dicts=rows)
+
+
 def test_from_index_requires_the_supplement(tmp_path: pathlib.Path) -> None:
     shutil.copy(INDEX, tmp_path)
     shutil.copy(INDEX.with_suffix('.tab'), tmp_path)
@@ -728,10 +751,10 @@ def test_from_index_fov_override() -> None:
 
 
 def test_host_from_index_dispatches_to_iss() -> None:
-    # oops.Host.from_index cannot name this supplement, so it reads the index alone and
-    # the time comes from IMAGE_TIME, to the second
+    # oops.Host.from_index cannot name this supplement, so VoyagerISS merges it
     obs = oops.Host.from_index(INDEX)[9]
     assert obs.instrument == 'ISS'
+    assert obs.dict['STOP_TIME'] == STOP_TIME
     assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
     assert frame_matrix(obs) == pytest.approx(camera_matrix(CLOCK_COUNT))
 

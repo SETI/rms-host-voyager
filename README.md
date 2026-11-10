@@ -44,13 +44,6 @@ be installed with:
 pip install rms-host-voyager
 ```
 
-The host needs the `oops.Host` interface, which is not yet in a released version of
-`rms-oops`. Until it is, install `rms-oops` from its development branch:
-
-```sh
-pip install "rms-oops @ git+https://github.com/SETI/rms-oops@mrs_260925_host_reorg"
-```
-
 Geometry calculations need the Voyager SPICE kernels, which are read through the kernel
 database of `spicedb`, located by the `SPICE_PATH` environment variable (or
 `$OOPS_RESOURCES/SPICE`) and `SPICE_SQLITE_DB_NAME`.
@@ -58,7 +51,9 @@ database of `spicedb`, located by the `SPICE_PATH` environment variable (or
 # Getting Started
 
 Importing `host_voyager.oops` registers the Voyager ISS host with `oops.Host`, which can
-then identify and read any VGISS image, from either its PDS3 label or its VICAR file:
+then identify and read a VGISS image, from either its PDS3 label or its VICAR file. An
+image needs a time and, unless a `frame` override is given, a record in the scan platform
+C kernels; see [Features](#features).
 
 ```python
 import oops

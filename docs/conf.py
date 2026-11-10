@@ -25,11 +25,15 @@ project = 'rms-host-voyager'
 copyright = f'{datetime.date.today().year}, SETI Institute'
 author = 'SETI Institute'
 
-# The full version, including alpha/beta/rc tags
+# The full version, including alpha/beta/rc tags. setuptools_scm derives it from git when
+# the package is installed, which every docs build does first; without the installed
+# metadata there is no version to show, so the build stops rather than invent one.
 try:
     release = importlib.metadata.version('rms-host-voyager')
-except importlib.metadata.PackageNotFoundError:
-    release = '1.0.0'  # fallback for development
+except importlib.metadata.PackageNotFoundError as err:
+    raise RuntimeError('rms-host-voyager is not installed, so the documentation has no '
+                       'version; run scripts/setup-venv.sh or pip install -e ".[docs]" '
+                       'before building the docs') from err
 
 # -- General configuration ---------------------------------------------------
 
@@ -130,7 +134,7 @@ myst_enable_extensions = [
     "deflist",
 ]
 
-# Mermaid settings — use client-side rendering so no mmdc binary is required
+# Mermaid settings: use client-side rendering so no mmdc binary is required
 # in CI or on ReadTheDocs.
 mermaid_output_format = 'raw'
 

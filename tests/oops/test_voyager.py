@@ -3,6 +3,7 @@
 ##########################################################################################
 """Tests for the Voyager mission support, host_voyager.oops._voyager."""
 
+import types
 from typing import Any
 
 import julian
@@ -129,6 +130,26 @@ def test_initialize_furnishes_the_cruise_spks_first(
     assert names.index('furnish_kernels') < names.index('furnish_spk')
 
 
+def test_initialize_raises_earlier_spks_above_the_cruise_spks(
+        fake_spicedb: FakeSpiceDB) -> None:
+    """SP kernels furnished before the cruise ones are furnished again after them, in
+    their load order, so that they keep precedence over them."""
+
+    de440 = types.SimpleNamespace(spice_id=10, filespec='General/SPK/de440.bsp',
+                                  start_time='1950-01-01', stop_time='2050-01-01')
+    sat = [types.SimpleNamespace(spice_id=6, filespec=f'Saturn/SPK/sat441_{n}.bsp',
+                                 start_time='1950-01-01', stop_time='2050-01-01')
+           for n in (1, 2)]
+    fake_spicedb.furnished_spks += ['/local/General/SPK/de440.bsp',
+                                    '/local/Saturn/SPK/sat441.bsp']
+    fake_spicedb.furnished_info.update({'de440.bsp': [de440], 'sat441.bsp': sat})
+    _Voyager.initialize()
+    (_, (args, kwargs)) = fake_spicedb.named('furnish_kernels')
+    assert kwargs == {'fast': False}
+    assert [filespec for (_, filespec, _, _) in args[0]] == [
+        'General/SPK/de440.bsp', 'Saturn/SPK/sat441_1.bsp', 'Saturn/SPK/sat441_2.bsp']
+
+
 @pytest.mark.parametrize(('asof', 'furnished'), [
     ('2013-01-01', []),
     ('2014-01-01', [CRUISE_1, CRUISE_2]),
@@ -140,6 +161,17 @@ def test_initialize_cruise_spks_honor_asof(fake_spicedb: FakeSpiceDB, asof: str,
     _Voyager.initialize(asof=asof)
     ((args, _),) = fake_spicedb.named('furnish_kernels')
     assert [filespec for (_, filespec, _, _) in args[0]] == furnished
+
+
+def test_initialize_closes_the_database_on_failure(fake_spicedb: FakeSpiceDB,
+                                                   monkeypatch: pytest.MonkeyPatch) -> None:
+    def no_ck(*args: Any, **kwargs: Any) -> list[str]:
+        raise ValueError('no C kernel')
+
+    monkeypatch.setattr('spicedb.furnish_ck', no_ck)
+    with pytest.raises(ValueError, match='no C kernel'):
+        _Voyager.initialize()
+    assert fake_spicedb.calls[-1][0] == 'close_db'
 
 
 def test_initialize_runs_once(fake_spice: FakeSpice, fake_spicedb: FakeSpiceDB) -> None:
@@ -167,6 +199,17 @@ def test_load_instruments_includes_iss_on_the_first_call(fake_spicedb: FakeSpice
     assert fake_spicedb.named('furnish_inst') == [(([-31, -32],),
                                                    {'inst': ['ISS'], 'asof': None})]
     assert _Voyager.loaded_instruments == ['ISS']
+
+
+def test_load_instruments_closes_the_database_on_failure(
+        fake_spicedb: FakeSpiceDB, monkeypatch: pytest.MonkeyPatch) -> None:
+    def no_inst(*args: Any, **kwargs: Any) -> list[str]:
+        raise ValueError('no instrument kernel')
+
+    monkeypatch.setattr('spicedb.furnish_inst', no_inst)
+    with pytest.raises(ValueError, match='no instrument kernel'):
+        _Voyager.load_instruments()
+    assert fake_spicedb.calls[-1][0] == 'close_db'
 
 
 def test_load_instruments_skips_loaded_instruments(fake_spicedb: FakeSpiceDB) -> None:
@@ -265,6 +308,31 @@ def test_sclk_ticks_in_a_given_partition() -> None:
 def test_sclk_ticks_partition_nearest_a_time(near: float, partition: int) -> None:
     assert _Voyager.sclk_ticks(2, CLOCK_COUNT, near=near) == fake_scencd(
         -32, f'{partition}/{CLOCK_COUNT}')
+
+
+@pytest.mark.parametrize('error', [ValueError, RuntimeError],
+                         ids=['exception-action', 'runtime-action'])
+def test_sclk_ticks_skips_a_partition_without_the_count(
+        monkeypatch: pytest.MonkeyPatch, error: type[Exception]) -> None:
+    """A count outside a partition is skipped under either error action of cspyce."""
+
+    def scencd(naif_id: int, count: str) -> float:
+        if count.startswith('2/'):
+            raise error(f'SPICE(NOTINPART) -- scencd -- {count}')
+        return fake_scencd(naif_id, count)
+
+    monkeypatch.setattr('cspyce.scencd', scencd)
+    assert _Voyager.sclk_ticks(1, CLOCK_COUNT, near=_STOP_TDB) == fake_scencd(
+        -31, f'3/{CLOCK_COUNT}')
+
+
+def test_sclk_ticks_raises_other_spice_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    def scencd(naif_id: int, count: str) -> float:
+        raise RuntimeError('SPICE(KERNELVARNOTFOUND) -- scencd')
+
+    monkeypatch.setattr('cspyce.scencd', scencd)
+    with pytest.raises(RuntimeError, match='KERNELVARNOTFOUND'):
+        _Voyager.sclk_ticks(1, CLOCK_COUNT, near=_STOP_TDB)
 
 
 def test_sclk_ticks_rejects_a_count_in_no_partition(monkeypatch: pytest.MonkeyPatch

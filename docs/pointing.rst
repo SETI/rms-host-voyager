@@ -39,7 +39,7 @@ the count falls a whole number of FDS minutes later: 48, 96, 145, 240, 768 or 91
 in a few cases much more. For C3450201, ``STOP_TIME`` is 1980-10-29T05:57:22.00, while
 its count, 34502:01:001, converts to 06:10:10.7, 768.7 s later.
 
-Each image has exactly one record in the C kernel, stamped at its own clock stop count.
+An image has at most one record in the C kernel, stamped at its own clock stop count.
 A record looked up by time near ``STOP_TIME`` is therefore the record of another image
 whenever the two disagree: in the first 30 rows of the VGISS_6109 raw image index, this
 is so for 19 images.
@@ -105,7 +105,7 @@ Because the frame is a fixed matrix, the `navigation` and `tracker` overrides wo
 usual, but a time shift of the frame, the letter "F" in the `timeshift` override, has no
 effect on it.
 
-The rms-oops host that this package replaces, and any frame that looks the C kernel up
-by time, such as a :class:`~oops.frame.SpiceType1Frame`, gives a neighboring image's
+A lookup of the C kernel by time, whether a call to ``ckgp`` at mid-exposure or a frame
+such as a :class:`~oops.frame.SpiceType1Frame`, gives a neighboring image's
 pointing whenever the count and ``STOP_TIME`` disagree. Geometry computed that way for
 those images, including any gold master backplanes, is wrong.

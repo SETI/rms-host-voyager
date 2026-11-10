@@ -2,6 +2,8 @@
 # host_voyager/oops/_voyager.py
 ##########################################################################################
 
+import os
+
 import julian
 import spicedb
 import cspyce
@@ -92,18 +94,20 @@ class _Voyager:
 
         # The cruise trajectories go first: the planetary and encounter kernels furnished
         # after them take precedence, the planetary ones over the planet barycenters that
-        # NAIF merged into these files
+        # NAIF merged into these files. Any already furnished are raised above them.
         _Voyager._furnish_cruise_spks(asof)
 
         Body.define_solar_system(_Voyager.START_TIME, _Voyager.STOP_TIME, asof=asof,
                                  planets=planets, irregulars=irregulars)
 
         spicedb.open_db()
-        for vgr, naif_id in _Voyager.SPACECRAFT_IDS.items():
-            _ = spicedb.furnish_ck(naif_id, asof=asof)
-            for planet in _Voyager.ENCOUNTERS[vgr]:
-                _ = spicedb.furnish_spk(naif_id, name=f'%{planet}%', asof=asof)
-        spicedb.close_db()
+        try:
+            for vgr, naif_id in _Voyager.SPACECRAFT_IDS.items():
+                _ = spicedb.furnish_ck(naif_id, asof=asof)
+                for planet in _Voyager.ENCOUNTERS[vgr]:
+                    _ = spicedb.furnish_spk(naif_id, name=f'%{planet}%', asof=asof)
+        finally:
+            spicedb.close_db()
 
         for vgr, path_id in _Voyager.PATH_IDS.items():
             _ = oops.path.SpicePath(f'VOYAGER {vgr}', path_id=path_id)
@@ -116,7 +120,9 @@ class _Voyager:
 
         The files need not be in the spicedb database. Only their spacecraft segments
         are recorded, so :meth:`used_kernels` names them for the spacecraft alone, not
-        for the planet barycenters they also hold.
+        for the planet barycenters they also hold. Every SP kernel furnished before them
+        is furnished again after them, in the same order, so that it keeps precedence
+        over them.
 
         Parameters:
             asof (str | None): A date-time as :meth:`_format_asof` returns it; a file
@@ -141,7 +147,14 @@ class _Voyager:
                                                    filespec, start_time, stop_time,
                                                    release, naif_id, 100, None]))
 
+        # spicedb skips a kernel that is already furnished, so the planetary kernels of a
+        # Solar System that another host defined first would otherwise yield to the
+        # planet barycenters in these files, even outside the Voyager mission
+        earlier = [info for abspath in spicedb.FURNISHED_ABSPATHS['SPK']
+                   for info in spicedb.FURNISHED_INFO[os.path.basename(abspath)]]
         spicedb.furnish_kernels(kernels, fast=True)
+        if earlier:
+            spicedb.furnish_kernels(earlier, fast=False)
 
     @staticmethod
     def reset():
@@ -181,9 +194,11 @@ class _Voyager:
             return
 
         spicedb.open_db()
-        _ = spicedb.furnish_inst(list(_Voyager.SPACECRAFT_IDS.values()), inst=instruments,
-                                 asof=_Voyager._format_asof(asof))
-        spicedb.close_db()
+        try:
+            _ = spicedb.furnish_inst(list(_Voyager.SPACECRAFT_IDS.values()),
+                                     inst=instruments, asof=_Voyager._format_asof(asof))
+        finally:
+            spicedb.close_db()
 
         _Voyager.loaded_instruments += instruments
 
@@ -267,7 +282,9 @@ class _Voyager:
             float: The encoded clock ticks.
 
         Raises:
-            ValueError: If the count falls in no partition, or not in the one given.
+            ValueError: If the count falls in no partition, or not in the one given. Under
+                the "RUNTIME" error action of cspyce, a count not in the partition given
+                raises RuntimeError instead.
         """
 
         naif_id = _Voyager.SPACECRAFT_IDS[vgr]
@@ -276,10 +293,13 @@ class _Voyager:
 
         candidates = []
         for part in range(1, len(cspyce.scpart(naif_id)[0]) + 1):
+            # cspyce raises ValueError or RuntimeError, depending on its error action
             try:
                 ticks = cspyce.scencd(naif_id, f'{part}/{count}')
-            except ValueError:      # the count is outside this partition
-                continue
+            except (ValueError, RuntimeError) as err:
+                if 'SPICE(NOTINPART)' in str(err):
+                    continue
+                raise
             candidates.append((abs(cspyce.sct2e(naif_id, ticks) - near), ticks))
 
         if not candidates:

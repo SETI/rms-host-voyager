@@ -9,10 +9,10 @@ description = "Voyager mission host (ISS) for the OOPS observation geometry tool
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "cspyce",
+  "cspyce>=2.3.2",          # 2.3.2 is the first with Python 3.13 wheels
   "numpy>=2.0",
   "rms-filecache>=2.0.3",
-  "rms-julian",
+  "rms-julian>=3.0.2",      # 3.0.2 drops pyparsing's deprecated camelCase API
   "rms-oops>=0.4.0",        # 0.4.0 adds the oops.Host API; also provides spicedb
   "rms-pdsparser>=2.3.0",   # 2.3.0 adds as_dict
   "rms-vicar>=1.4.0",       # 1.4.0 adds as_dict
@@ -52,7 +52,7 @@ Issues = "https://github.com/SETI/rms-host-voyager/issues"
 dev = [
   "codespell>=2.4",
   "coverage>=7.0",
-  "flake8",
+  "flake8>=7.0",
   "mypy>=1.0",
   "pip-audit>=2.7",
   "pymarkdownlnt>=0.9.35",
@@ -66,10 +66,10 @@ dev = [
   "rms-host-voyager[docs]",
 ]
 docs = [
-  "myst-parser",
-  "sphinx>=7",
-  "sphinxcontrib-mermaid",
-  "sphinx-rtd-theme",
+  "myst-parser>=5.0",
+  "sphinx>=8",
+  "sphinxcontrib-mermaid>=2.0",
+  "sphinx-rtd-theme>=3.0",
 ]
 
 [tool.pytest.ini_options]

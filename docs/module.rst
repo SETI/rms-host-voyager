@@ -6,6 +6,11 @@
    :members:
    :show-inheritance:
 
+``host_voyager.oops`` Module
+============================
+
+.. automodule:: host_voyager.oops
+
 ``host_voyager.oops.iss`` Module
 ================================
 

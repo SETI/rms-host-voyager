@@ -257,8 +257,10 @@ class VoyagerISS(oops.Host):
                 "_raw_image_index" is replaced by "_supplemental_index" in upper or lower
                 case.
             row_dicts (list[dict[str, Any]], optional): A list of dictionaries, one per
-                row of the index. Include if `filepath` and `supplement` have already been
-                read. If provided, `supplement` is ignored.
+                row of the index, or of some of its rows. Include if `filepath` has
+                already been read. If the rows have no STOP_TIME column, the supplement
+                has not been merged; each row is then merged with the row of the
+                supplement that has the same VOLUME_NAME and FILE_SPECIFICATION_NAME.
             pds3_options (dict[str, Any], optional): Any keyword arguments and their
                 values to be passed to the :class:`~pdsparser.Pds3Label` parser.
             filter (dict[str, Any], optional): A dictionary of index column names and
@@ -321,7 +323,8 @@ class VoyagerISS(oops.Host):
             oops.host.HostIndexError: If `supplement` is not specified and the name of
                 `filepath` contains no "_raw_image_index", if the supplement does not
                 have the same number of rows as the index, or if a row's VOLUME_NAME or
-                FILE_SPECIFICATION_NAME differs from the index's.
+                FILE_SPECIFICATION_NAME differs from the index's; or, for `row_dicts`
+                without STOP_TIME, if the supplement has no row for one of them.
             oops.host.WrongHostError: If `filepath` is not a Voyager ISS index.
             OSError: If `filepath`, or a `supplement` that is specified, does not exist or
                 cannot be read.
@@ -329,14 +332,19 @@ class VoyagerISS(oops.Host):
 
         VoyagerISS.initialize()
 
-        # Read and filter the index table
+        # Read and filter the index table. oops.Host.from_index() passes the rows of
+        # whatever index it was given, read without the supplement, whose name it cannot
+        # derive. Naming the supplement here rejects any index but a raw image index, and
+        # the supplement is merged into rows that lack it.
+        filepath = FCPath(filepath)
+        if supplement is None:
+            supplement = VoyagerISS._supplement_path(filepath, pds3_options)
         if row_dicts is None:
-            filepath = FCPath(filepath)
-            if supplement is None:
-                supplement = VoyagerISS._supplement_path(filepath, pds3_options)
             row_dicts = VoyagerISS._read_index_rows(filepath, supplement=supplement,
                                                     validate=_INDEX_KEYS,
                                                     pds3_options=pds3_options)
+        elif row_dicts and 'STOP_TIME' not in row_dicts[0]:
+            row_dicts = VoyagerISS._merge_supplement(row_dicts, supplement, pds3_options)
         row_dicts = oops.Host._filter_index_rows(row_dicts, filter)
 
         overrides = {
@@ -395,6 +403,37 @@ class VoyagerISS(oops.Host):
         VoyagerISS._read_index_rows(filepath, pds3_options=pds3_options)
         raise oops.host.HostIndexError('Voyager ISS needs a raw image index, '
                                        f'"VGISS_xxxx_raw_image_index.lbl": {filepath}')
+
+    @staticmethod
+    def _merge_supplement(row_dicts, supplement, pds3_options):
+        """Rows of a raw image index merged with their rows of the supplemental index.
+
+        Parameters:
+            row_dicts (list[dict[str, Any]]): Rows of the raw image index.
+            supplement (str | pathlib.Path | FCPath): The path to the label of the
+                supplemental index.
+            pds3_options (dict[str, Any] | None): The options for the PDS3 label parser.
+
+        Returns:
+            list[dict[str, Any]]: A new dictionary for each row, holding the row of the
+            supplement with the same VOLUME_NAME and FILE_SPECIFICATION_NAME, updated by
+            the row of the index.
+
+        Raises:
+            oops.host.HostIndexError: If the supplement has no row for one of the rows.
+        """
+
+        supp_dicts = oops.Host._read_index_rows(supplement, pds3_options=pds3_options)
+        supp_by_key = {tuple(row[key] for key in _INDEX_KEYS): row for row in supp_dicts}
+
+        merged = []
+        for row_dict in row_dicts:
+            key = tuple(row_dict[key] for key in _INDEX_KEYS)
+            if key not in supp_by_key:
+                raise oops.host.HostIndexError(f'no row for {"/".join(key)} in '
+                                               f'{supplement}')
+            merged.append(supp_by_key[key] | row_dict)
+        return merged
 
     @staticmethod
     def _make_snapshot(dict_, filepath, data=None, *, return_all_planets=False,
