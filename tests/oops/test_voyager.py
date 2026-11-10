@@ -9,8 +9,8 @@ from typing import Any
 import julian
 import oops
 import pytest
-from conftest import (CLOCK_COUNT, CYCLE_SECONDS, STOP_TIME, FakeSpice, FakeSpiceDB,
-                      fake_scencd)
+from conftest import (CLOCK_COUNT, CYCLE_SECONDS, STOP_TIME, FakePrefix, FakeSpice,
+                      FakeSpiceDB, fake_scencd)
 from oops.body import Body
 
 from host_voyager.oops._voyager import TIMELINE, _Voyager
@@ -104,8 +104,8 @@ def test_initialize_furnishes_the_cruise_spks(fake_spice: FakeSpice,
     its relative path with a record for that spacecraft alone."""
 
     _Voyager.initialize()
-    assert fake_spice.spkcov == [('/fake/SPICE/' + CRUISE_1, -31),
-                                 ('/fake/SPICE/' + CRUISE_2, -32)]
+    assert fake_spice.spkcov == [(str(FakePrefix.ROOT / CRUISE_1), -31),
+                                 (str(FakePrefix.ROOT / CRUISE_2), -32)]
     (args, kwargs) = fake_spicedb.named('furnish_kernels')[0]
     assert kwargs == {'fast': True}
     assert [(spice_id, filespec, start[:10], stop[:10])

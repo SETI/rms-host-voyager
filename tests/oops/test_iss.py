@@ -702,7 +702,8 @@ def test_from_index_finds_an_upper_case_supplement(tmp_path: pathlib.Path) -> No
 
 def test_from_index_rejects_another_host(tmp_path: pathlib.Path) -> None:
     table = tmp_path / 'GO_0022_index.tab'
-    table.write_text('"GALILEO","SSI"\r\n')
+    # newline='' keeps Windows from writing CR CR LF, which would lengthen the records
+    table.write_text('"GALILEO","SSI"\r\n', newline='')
     label = tmp_path / 'GO_0022_index.lbl'
     label.write_text('\r\n'.join([
         'PDS_VERSION_ID = PDS3', 'RECORD_TYPE = FIXED_LENGTH', 'RECORD_BYTES = 17',
@@ -713,7 +714,7 @@ def test_from_index_rejects_another_host(tmp_path: pathlib.Path) -> None:
         'START_BYTE = 2', 'BYTES = 7', 'END_OBJECT = COLUMN',
         'OBJECT = COLUMN', 'NAME = INSTRUMENT_ID', 'DATA_TYPE = CHARACTER',
         'START_BYTE = 12', 'BYTES = 3', 'END_OBJECT = COLUMN',
-        'END_OBJECT = INDEX_TABLE', 'END', '']))
+        'END_OBJECT = INDEX_TABLE', 'END', '']), newline='')
     with pytest.raises(oops.host.WrongHostError, match='not a Voyager ISS index'):
         VoyagerISS.from_index(label)
 
