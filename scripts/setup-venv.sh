@@ -89,7 +89,23 @@ if ! "$PYTHON_CMD" -c "import sys; sys.exit(0 if sys.version_info >= ($MIN_PYTHO
     exit 1
 fi
 
-if [ "$RECREATE" = true ] && [ -d "$VENV" ]; then
+# VENV comes from the environment, so --recreate deletes only a virtualenv, recognized by
+# the pyvenv.cfg every one holds, and never the project or a directory containing it.
+if [ "$RECREATE" = true ] && [ -e "$VENV" ]; then
+    if ! VENV_REAL="$(cd "$VENV" 2>/dev/null && pwd -P)"; then
+        print_error "$VENV is not a directory; refusing to delete it"
+        exit 1
+    fi
+    if [ ! -f "$VENV_REAL/pyvenv.cfg" ]; then
+        print_error "$VENV is not a virtualenv (it has no pyvenv.cfg); refusing to delete it"
+        exit 1
+    fi
+    case "$(pwd -P)/" in
+        "${VENV_REAL%/}/"*)
+            print_error "$VENV contains the project; refusing to delete it"
+            exit 1
+            ;;
+    esac
     print_info "Removing existing virtualenv at $VENV"
     rm -rf "$VENV"
 fi
@@ -98,7 +114,7 @@ if [ -f "$VENV/bin/activate" ]; then
     print_info "Reusing existing virtualenv at $VENV"
 else
     if [ -e "$VENV" ]; then
-        print_error "$VENV exists but is not a virtualenv; move it aside or use --recreate"
+        print_error "$VENV exists but is not a virtualenv; move it aside"
         exit 1
     fi
     print_info "Creating virtualenv at $VENV"
