@@ -122,9 +122,12 @@ apply here to the stubs described below.
   GEOMED labels; and the RAW and GEOMED images truncated after their VICAR headers. Their
   `_edited` names carry through the labels' pointers.
 - `from_file()` returns the same Snapshot, `dict` aside, whether it is given a label or
-  its image file. Given a label, it reads the image file the label's `^IMAGE` names for
-  the data and for the VICAR header, so that file must exist even with `astrometry=True`,
-  and `filepath`, `basename`, `abspath` and `image_url` name it, never the label. The data
+  its image file. Hosts read only what they need (operator, 2026-11-17): an image input
+  never reads the detached label, and a label input with `astrometry=True` reads only the
+  label and needs no image file, as the rms-oops host did; `if_scale`, which only the
+  VICAR header gives, is then None. Otherwise a label input reads the image file the
+  label's `^IMAGE` names for the data and the VICAR header. Either way `filepath`,
+  `basename`, `abspath` and `image_url` name that image file, never the label. The data
   are read where the VICAR header places them, not where the label does: the label of
   C2673426_GEOMED in VGISS_7205 points a record early, into its two-record header, and
   263 of the 8,392 labels of VGISS_7205 and VGISS_7206 disagree with their headers. The
@@ -132,7 +135,7 @@ apply here to the stubs described below.
   (I/F)*10000., MULTIPLY DN VALUE BY x", which FICOR77 writes as `LABEL3`, divided by
   10000), which no label keyword gives: the label's `REFLECTANCE_SCALING_FACTOR` is 3.345
   times larger for Voyager 1 images of Saturn. `spacecraft` (1 or 2) comes from the
-  metadata on every path. Consumers read these subfields, never `LAB02` or `LABEL3` in
+  label's `INSTRUMENT_HOST_NAME` (or `SPACECRAFT_NAME`) or the header's `LAB02`. Consumers read these subfields, never `LAB02` or `LABEL3` in
   `dict`, which only the VICAR path has.
 - A LAB03 line pads the filter name and writes `CH4/JS` and `CH4/U`; `_filter_name()`
   respells it as the label does (`CLEAR`, `CH4_JS`) on every path.

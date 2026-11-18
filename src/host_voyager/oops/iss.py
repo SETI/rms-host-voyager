@@ -11,7 +11,7 @@ import numpy as np
 
 from filecache import FCPath
 from pdsparser import Pds3Label
-from vicar     import VicarError, VicarImage, VicarLabel
+from vicar     import VicarError, VicarImage
 
 import oops
 from ._voyager import _Voyager
@@ -156,9 +156,10 @@ class VoyagerISS(oops.Host):
                 The path to the PDS3 label or the VICAR image file, or its parsed content
                 as a Pds3Label, VicarLabel, or VicarImage. The metadata of a VICAR file
                 are read from its own header; no PDS3 label is needed. A PDS3 label's
-                metadata are read from the label, and its image file, which must exist,
-                supplies the VICAR header and the data, which are read where that header
-                places them.
+                metadata are read from the label. Unless `astrometry` is True, its image
+                file, which must then exist, supplies the data, read where the file's
+                VICAR header places them, and the header supplies `if_scale`. With
+                `astrometry`, only the label is read.
             return_all_planets (bool, optional): Include kernels for all planets, not just
                 the planet of the encounter.
             pds3_options (dict[str, Any], optional): Any keyword arguments and their
@@ -213,13 +214,15 @@ class VoyagerISS(oops.Host):
             `spice_kernels`, `filepath`, `basename`, `spice_to_frame`,
             `spice_frame_name`, `spice_frame_id`, `abspath` and `image_url` inserted, and
             `data` unless `astrometry` is True. Every subfield but `dict` is the same
-            whether a PDS3 label or its image file is given:
+            whether a PDS3 label or its image file is given, except that `if_scale` is
+            None for a label read with `astrometry`, since only the label is read:
 
             - `dict` is the PDS3 label, or the VICAR header with its values also given
               under their PDS3 keyword names.
             - `filter` is the FILTER_NAME as a PDS3 label spells it, such as "CLEAR" or
               "CH4_JS".
-            - `spacecraft` is the spacecraft number, 1 or 2.
+            - `spacecraft` is the spacecraft number, 1 or 2, from INSTRUMENT_HOST_NAME
+              (or SPACECRAFT_NAME) in a label and from LAB02 in a VICAR header.
             - `if_scale` is the factor that converts the data of a calibrated product
               (CALIB or GEOMED) to I/F, from the line "FOR (I/F)*10000., MULTIPLY DN
               VALUE BY x" of its VICAR header, so x / 10000; None for a product whose
@@ -227,7 +230,8 @@ class VoyagerISS(oops.Host):
               REFLECTANCE_SCALING_FACTOR is not always the same: for Voyager 1 images of
               Saturn it is 3.345 times larger.
             - `filepath`, `basename`, `abspath` and `image_url` name the image file,
-              even when the PDS3 label is given.
+              even when the PDS3 label is given; with `astrometry`, as the label names
+              it, whether or not the file exists.
 
             A geometrically corrected image has a 1000x1000 FOV and every other product
             an 800x800 one.
@@ -243,8 +247,8 @@ class VoyagerISS(oops.Host):
             oops.host.PdsHostError: If the PDS3 label cannot be parsed.
             oops.host.VicarHostError: If the VICAR header cannot be parsed.
             oops.host.WrongHostError: If the file is not a Voyager ISS image.
-            OSError: If the file, or the image file a PDS3 label points to, cannot be
-                read.
+            OSError: If the file, or unless `astrometry` is True the image file a PDS3
+                label points to, cannot be read.
         """
 
         VoyagerISS.initialize()     # define everything the first time through
@@ -254,10 +258,10 @@ class VoyagerISS(oops.Host):
                                               pds3_options=pds3_options)
 
         # Harmonize the label content. Given a PDS3 label, the image file it points to is
-        # the observation's file, and its VICAR header supplies what the label does not
-        # give.
+        # the observation's file. For astrometry, only the label is read and the file
+        # need not exist; otherwise the file supplies the data and its VICAR header.
         if isinstance(fileinfo, Pds3Label):
-            filepath = VoyagerISS._image_path(fileinfo)
+            filepath = VoyagerISS._image_path(fileinfo, find=not astrometry)
             dict_ = fileinfo.as_dict()
             vic = None
         else:
@@ -268,9 +272,11 @@ class VoyagerISS(oops.Host):
         # Read the data, if needed, where the VICAR header places them, whichever file
         # was given. The label of C2673426_GEOMED in VGISS_7205 places the image a record
         # too early, inside the header, which takes two records.
-        if vic is None or not (astrometry or isinstance(vic, VicarImage)):
-            vic = VoyagerISS._read_vicar(filepath, astrometry=astrometry)
-        data = None if astrometry else vic.data_2d
+        data = None
+        if not astrometry:
+            if not isinstance(vic, VicarImage):
+                vic = VoyagerISS._read_vicar_image(filepath)
+            data = vic.data_2d
 
         overrides = {
             'target'      : target,
@@ -287,7 +293,8 @@ class VoyagerISS(oops.Host):
         }
 
         return VoyagerISS._make_snapshot(dict_, filepath=filepath, data=data,
-                                         if_scale=VoyagerISS._if_scale(vic),
+                                         if_scale=(None if vic is None
+                                                   else VoyagerISS._if_scale(vic)),
                                          return_all_planets=return_all_planets,
                                          overrides=overrides)
 
@@ -326,35 +333,37 @@ class VoyagerISS(oops.Host):
                                          pds3_options=pds3_options | {'method': 'loose'})
 
     @staticmethod
-    def _image_path(label):
+    def _image_path(label, *, find):
         """The image file that a PDS3 label describes.
 
         Parameters:
             label (Pds3Label): The parsed label.
+            find (bool): True to look for the file, which then need not have the same
+                case as in the label; False to name it without touching the file system.
 
         Returns:
             FCPath: The file named by the label's IMAGE pointer, in the directory of the
-            label. If no file of that name exists, the same name in upper or lower case
-            is used if it exists, as when the image array is read.
+            label. If `find` is True and no file of that name exists, the same name in
+            upper or lower case is used if it exists.
         """
 
         name = label['^IMAGE']
         parent = FCPath(label.filepath).parent
-        for option in dict.fromkeys((name, name.upper(), name.lower())):
-            if (parent / option).is_file():
-                return parent / option
+        if find:
+            for option in dict.fromkeys((name, name.upper(), name.lower())):
+                if (parent / option).is_file():
+                    return parent / option
         return parent / name
 
     @staticmethod
-    def _read_vicar(filepath, *, astrometry):
-        """The VICAR header of an image file, with its data unless only for astrometry.
+    def _read_vicar_image(filepath):
+        """The VICAR image and header in an image file.
 
         Parameters:
             filepath (FCPath): The path to the image file.
-            astrometry (bool): True to read only the header.
 
         Returns:
-            VicarLabel | VicarImage: The header, or the image with its header.
+            VicarImage: The image with its header.
 
         Raises:
             oops.host.VicarHostError: If the header cannot be parsed.
@@ -362,8 +371,6 @@ class VoyagerISS(oops.Host):
         """
 
         try:
-            if astrometry:
-                return VicarLabel(filepath, strict=False)
             return VicarImage(filepath, strict=False)
         except VicarError as err:
             raise oops.host.VicarHostError(str(err)) from err

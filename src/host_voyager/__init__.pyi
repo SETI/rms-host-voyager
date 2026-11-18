@@ -36,7 +36,8 @@ class VoyagerISS(Host):
     # The runtime names the first parameter `fileinfo`, where Host names it `filepath`.
     # An image with no C-kernel record raises oops.host.HostError whose cause is the
     # SPICE exception and whose message ends with its short code, such as
-    # "SPICE(CKINSUFFDATA)".
+    # "SPICE(CKINSUFFDATA)". With astrometry=True, a PDS3 label is read alone, the image
+    # file need not exist, and the Snapshot's if_scale is None.
     @staticmethod
     def from_file(  # type: ignore[override]
         fileinfo: str | pathlib.Path | FCPath | Pds3Label | VicarLabel

@@ -555,21 +555,29 @@ def test_from_file_label_names_the_image_file(label: pathlib.Path) -> None:
     assert obs.image_url.endswith(f'/test_files/{image.name}')
 
 
-def test_from_file_label_needs_the_image_file(tmp_path: pathlib.Path) -> None:
+def test_from_file_label_for_astrometry_reads_only_the_label(
+        tmp_path: pathlib.Path) -> None:
+    label = tmp_path / GEOMED_LABEL.name
+    shutil.copy(GEOMED_LABEL, label)
+    obs = VoyagerISS.from_file(label, astrometry=True)
+    assert obs.if_scale is None
+    assert obs.spacecraft == 1
+    assert obs.basename == GEOMED_VICAR.name
+
+
+def test_from_file_label_needs_the_image_file_for_data(tmp_path: pathlib.Path) -> None:
     label = tmp_path / GEOMED_LABEL.name
     shutil.copy(GEOMED_LABEL, label)
     with pytest.raises(FileNotFoundError):
-        VoyagerISS.from_file(label, astrometry=True)
+        VoyagerISS.from_file(label)
 
 
 def test_from_file_label_finds_the_image_file_in_another_case(
         tmp_path: pathlib.Path) -> None:
-    label = tmp_path / GEOMED_LABEL.name
-    shutil.copy(GEOMED_LABEL, label)
-    image = tmp_path / GEOMED_VICAR.name.lower()
-    shutil.copy(GEOMED_VICAR, image)
+    (label, image) = _write_label_and_image(tmp_path, image_name='c3450201.img',
+                                            pointer_name='C3450201.IMG')
     # On a case-insensitive file system the name as given also finds the file
-    obs = VoyagerISS.from_file(label, astrometry=True)
+    obs = VoyagerISS.from_file(label)
     assert pathlib.Path(obs.abspath).samefile(image)
 
 
@@ -578,7 +586,7 @@ def test_from_file_label_reports_an_invalid_vicar_header(tmp_path: pathlib.Path)
     shutil.copy(GEOMED_LABEL, label)
     (tmp_path / GEOMED_VICAR.name).write_bytes(b'NOT A VICAR HEADER')
     with pytest.raises(oops.host.VicarHostError):
-        VoyagerISS.from_file(label, astrometry=True)
+        VoyagerISS.from_file(label)
 
 
 def _label_with_note_on_its_own_line(directory: pathlib.Path) -> pathlib.Path:
@@ -637,17 +645,30 @@ def test_from_file_sets_local_paths() -> None:
     assert obs.image_url.endswith('/test_files/C3450201_GEOMED_edited.IMG')
 
 
-@pytest.mark.parametrize('path', [GEOMED_LABEL, GEOMED_VICAR], ids=['label', 'vicar'])
-def test_from_file_if_scale_from_the_vicar_header(path: pathlib.Path) -> None:
-    obs = VoyagerISS.from_file(path, astrometry=True)
+def test_from_file_vicar_if_scale_from_its_header() -> None:
+    obs = VoyagerISS.from_file(GEOMED_VICAR, astrometry=True)
     assert obs.if_scale == pytest.approx(1.e-4, rel=1.e-12)
 
 
-@pytest.mark.parametrize('path', [RAW_LABEL, RAW_LABEL.with_suffix('.IMG')],
-                         ids=['label', 'vicar'])
-def test_from_file_raw_product_has_no_if_scale(path: pathlib.Path) -> None:
-    obs = VoyagerISS.from_file(path, astrometry=True)
+def test_from_file_raw_vicar_has_no_if_scale() -> None:
+    obs = VoyagerISS.from_file(RAW_LABEL.with_suffix('.IMG'), astrometry=True)
     assert obs.if_scale is None
+
+
+@pytest.mark.parametrize(('label3', 'if_scale'), [
+    ('FOR (I/F)*10000., MULTIPLY DN VALUE BY               0.10000', 1.e-5),
+    (None, None),
+], ids=['calibrated', 'raw'])
+def test_from_file_label_if_scale_from_the_image_header(tmp_path: pathlib.Path,
+                                                        label3: str | None,
+                                                        if_scale: float | None) -> None:
+    (label, image) = _write_label_and_image(tmp_path, label3=label3)
+    from_label = VoyagerISS.from_file(label).if_scale
+    assert from_label == VoyagerISS.from_file(image).if_scale
+    if if_scale is None:
+        assert from_label is None
+    else:
+        assert from_label == pytest.approx(if_scale, rel=1.e-12)
 
 
 @pytest.mark.parametrize('path', [RAW_LABEL, GEOMED_LABEL, GEOMED_VICAR],
@@ -669,27 +690,47 @@ def test_from_file_label_reads_the_data_its_header_describes(
     """The data come from where the VICAR header places them, even if the label's IMAGE
     pointer is a record early, as in C2673426_GEOMED.LBL of VGISS_7205."""
 
-    image_path = _write_vicar(tmp_path)
-    lblsize = vicar.VicarLabel.from_file(image_path)['LBLSIZE']
+    (label, image) = _write_label_and_image(tmp_path, records_early=records_early)
+    obs = VoyagerISS.from_file(label)
+    assert obs.data.tolist() == np.arange(64).reshape(8, 8).tolist()
+    assert obs.basename == image.name
+
+
+def _write_label_and_image(directory: pathlib.Path, *, records_early: int = 0,
+                           label3: str | None = None, image_name: str = 'C3450201.IMG',
+                           pointer_name: str | None = None
+                           ) -> tuple[pathlib.Path, pathlib.Path]:
+    """Write a small Voyager VICAR image and a PDS3 label for it; return their paths.
+
+    Parameters:
+        directory: Where to write both files.
+        records_early: How many records before the start of the data the label's IMAGE
+            pointer points.
+        label3: The value of LABEL3 in the VICAR header; None to leave it out.
+        image_name: The name of the image file.
+        pointer_name: The name of the image file in the label's IMAGE pointer; None for
+            `image_name`.
+    """
+
+    image = _write_vicar(directory, name=image_name, label3=label3)
+    pointer_name = pointer_name or image_name
+    lblsize = vicar.VicarLabel.from_file(image)['LBLSIZE']
     assert isinstance(lblsize, int)
     first_record = lblsize // 8 + 1 - records_early
-    lines = RAW_LABEL.read_text().replace('C3450201_RAW_edited.IMG', image_path.name)
+    lines = RAW_LABEL.read_text().replace('C3450201_RAW_edited.IMG', pointer_name)
     lines = lines.replace('RECORD_BYTES                    = 1024', 'RECORD_BYTES = 8')
     lines = lines.replace('FILE_RECORDS                    = 804', 'FILE_RECORDS = 8')
     for pointer in ('VICAR_HEADER', 'ENGINEERING_TABLE', 'VICAR_EXTENSION_HEADER'):
         lines = '\n'.join(line for line in lines.splitlines()
                           if not line.startswith('^' + pointer))
-    lines = lines.replace(f'("{image_path.name}", 4)',
-                          f'("{image_path.name}", {first_record})')
+    lines = lines.replace(f'("{pointer_name}", 4)', f'("{pointer_name}", {first_record})')
     lines = lines.replace('LINES                         = 800', 'LINES = 8')
     lines = lines.replace('LINE_SAMPLES                  = 800', 'LINE_SAMPLES = 8')
     lines = lines.replace('LINE_PREFIX_BYTES             = 224', 'LINE_PREFIX_BYTES = 0')
-    label = tmp_path / 'C3450201_RAW.LBL'
+    label = directory / 'C3450201_RAW.LBL'
     label.write_text(_strip_objects(lines, ('VICAR_HEADER', 'ENGINEERING_TABLE',
                                             'VICAR_EXTENSION_HEADER')))
-    obs = VoyagerISS.from_file(label)
-    assert obs.data.tolist() == np.arange(64).reshape(8, 8).tolist()
-    assert obs.basename == image_path.name
+    return (label, image)
 
 
 def _strip_objects(text: str, names: tuple[str, ...]) -> str:
@@ -712,13 +753,17 @@ def _strip_objects(text: str, names: tuple[str, ...]) -> str:
     return '\r\n'.join(kept) + '\r\n'
 
 
-def _write_vicar(directory: pathlib.Path) -> pathlib.Path:
-    """Write a small Voyager VICAR image with no PDS3 label; return its path."""
+def _write_vicar(directory: pathlib.Path, *, name: str = 'C3450201.IMG',
+                 label3: str | None = None) -> pathlib.Path:
+    """Write a small Voyager VICAR image with no PDS3 label; return its path. The header
+    holds LABEL3 if `label3` is given."""
 
     vic = vicar.VicarImage.from_array(np.arange(64, dtype='uint8').reshape(8, 8))
     for (key, value) in {'LAB02': _LAB02, 'LAB03': _LAB03, 'LAB05': _LAB05}.items():
         vic[key] = value
-    path = directory / 'C3450201.IMG'
+    if label3 is not None:
+        vic['LABEL3'] = label3
+    path = directory / name
     vic.write_file(path)
     return path
 

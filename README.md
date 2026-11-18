@@ -80,12 +80,14 @@ snapshots = VoyagerISS.from_index('VGISS_6109_raw_image_index.lbl')
   other product an 800x800 one. `astrometry=True` reads no image data.
 - Given the PDS3 label or the image file, `from_file()` returns the same `Snapshot` except
   for `dict`, which holds the label in one case and the VICAR header in the other. Given
-  the label, it also reads the image file the label points to, which must exist, and the
-  file names in the `Snapshot` are those of the image file.
+  the label, it also reads the image file the label points to, which must exist, except
+  with `astrometry=True`, when it reads only the label. The file names in the `Snapshot`
+  are those of the image file.
 - Each `Snapshot` gives the spacecraft number as `spacecraft`, the filter as the PDS3
   label spells it as `filter`, and, for a CALIB or GEOMED image, the factor that converts
-  its data to I/F as `if_scale`. `if_scale` is None for a RAW or CLEANED image, and for
-  any image whose VICAR header gives no I/F factor, so check it before use.
+  its data to I/F as `if_scale`. `if_scale` is None for a RAW or CLEANED image, for any
+  image whose VICAR header gives no I/F factor, and for a label read with
+  `astrometry=True`, so check it before use.
 - `VoyagerISS.from_index()` makes one `Snapshot` for each row of a raw image index,
   merging in the columns of the supplemental index. The volume index, which lists every
   product, is not accepted.
