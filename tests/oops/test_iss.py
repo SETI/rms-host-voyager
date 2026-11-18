@@ -3,6 +3,7 @@
 ##########################################################################################
 """Tests for the Voyager ISS host, host_voyager.oops.iss."""
 
+import datetime as dt
 import os
 import pathlib
 import shutil
@@ -16,6 +17,7 @@ import oops
 import pdsparser
 import pytest
 import vicar
+from filecache import FCPath
 from conftest import (CLOCK_COUNT, GEOMED_LABEL, GEOMED_VICAR, INDEX, INDEX_ROWS,
                       PLATFORM_TO_CAMERA_ANGLE, RAW_LABEL, STOP_TIME, SUPPLEMENT,
                       FakeSpice, FakeSpiceDB, camera_matrix, fake_scencd, rotation)
@@ -56,11 +58,13 @@ def label_dict(**changes: Any) -> dict[str, Any]:
 
 def snapshot(*, return_all_planets: bool = False, **changes: Any) -> Any:
     """A Snapshot from `_make_snapshot`; keywords named for overrides are overrides and
-    every other keyword changes the label."""
+    every other keyword changes the label, whose null values are then left out, as
+    `from_file` and `from_index` leave them out."""
 
     overrides = {name: changes.pop(name, None) for name in OVERRIDE_NAMES}
     VoyagerISS.initialize()
-    return VoyagerISS._make_snapshot(label_dict(**changes), filepath='VGISS_6109/X.LBL',
+    return VoyagerISS._make_snapshot(iss._without_nulls(label_dict(**changes)),
+                                     filepath='VGISS_6109/X.IMG',
                                      return_all_planets=return_all_planets,
                                      overrides=overrides)
 
@@ -136,6 +140,7 @@ def test_detect_in_pds3(label: dict[str, str], expected: bool) -> None:
 _LAB02 = 'VGR-1   FDS 34502.01   PICNO 0469S1-015   SCET 80.303 05:57:22         C'
 _LAB03 = 'NA CAMERA  EXP    1920.0 MSEC FILT 1(VIOLET)  LO GAIN  SCAN RATE  5:1  C'
 _LAB05 = 'IN/112380/ 9 OUT/xxxxxx/xx     SATURN      DSS #63   BIT SNR    8.297  C'
+_LABEL3 = 'FOR (I/F)*10000., MULTIPLY DN VALUE BY               0.10000'
 
 
 @pytest.mark.parametrize(('label', 'expected'), [
@@ -225,9 +230,9 @@ def test_time_falls_back_to_image_time() -> None:
 @pytest.mark.parametrize('changes', [{'STOP_TIME': None, 'IMAGE_TIME': None},
                                      {'STOP_TIME': 'UNK', 'IMAGE_TIME': 'UNK'}],
                          ids=['absent', 'unknown'])
-def test_no_time_is_unusable(changes: dict[str, Any]) -> None:
-    with pytest.raises(oops.host.HostError,
-                       match=r'no STOP_TIME or IMAGE_TIME .* C3450201_RAW\.IMG'):
+def test_no_time_is_a_format_error(changes: dict[str, Any]) -> None:
+    with pytest.raises(oops.host.HostFormatError,
+                       match=r'VGISS_6109/X\.IMG has no STOP_TIME or IMAGE_TIME'):
         snapshot(**changes)
 
 
@@ -237,8 +242,26 @@ def test_time_never_comes_from_the_clock() -> None:
     assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
 
 
-def test_null_exposure_is_zero() -> None:
-    assert snapshot(EXPOSURE_DURATION=-99.9999).texp == 0.
+@pytest.mark.parametrize(('changes', 'item'), [
+    ({'EXPOSURE_DURATION': -99.9999}, 'EXPOSURE_DURATION'),
+    ({'EXPOSURE_DURATION': 'UNK'}, 'EXPOSURE_DURATION'),
+    ({'INSTRUMENT_ID': None}, 'INSTRUMENT_NAME'),
+    ({'INSTRUMENT_HOST_NAME': None}, 'INSTRUMENT_HOST_NAME or SPACECRAFT_NAME'),
+    ({'MISSION_PHASE_NAME': 'UNK'}, 'MISSION_PHASE_NAME'),
+    ({'SPACECRAFT_CLOCK_STOP_COUNT': None, 'IMAGE_NUMBER': None}, 'IMAGE_NUMBER'),
+], ids=['index-null-exposure', 'unknown-exposure', 'camera', 'spacecraft', 'phase',
+        'clock-count'])
+def test_missing_required_item_is_a_format_error(changes: dict[str, Any],
+                                                 item: str) -> None:
+    with pytest.raises(oops.host.HostFormatError,
+                       match=rf'VGISS_6109/X\.IMG has no {item}$'):
+        snapshot(**changes)
+
+
+def test_clock_count_is_not_needed_with_a_custom_frame() -> None:
+    obs = snapshot(SPACECRAFT_CLOCK_STOP_COUNT=None, IMAGE_NUMBER=None,
+                   frame=oops.Frame.J2000)
+    assert obs.frame is oops.Frame.J2000
 
 ##########################################################################################
 # Pointing
@@ -355,7 +378,7 @@ def test_snapshot_subfields(fake_spicedb: FakeSpiceDB) -> None:
     assert obs.label_target == 'SATURN'
     assert obs.dict == label_dict()
     assert obs.spice_kernels == fake_spicedb.used
-    assert obs.basename == 'X.LBL'
+    assert obs.basename == 'X.IMG'
     assert obs.path.path_id == 'VOYAGER1'
 
 
@@ -371,6 +394,28 @@ def test_snapshot_spice_subfields(fake_spicedb: FakeSpiceDB, changes: dict[str, 
     assert obs.spice_frame_id == frame_id
     assert obs.spice_to_frame == oops.Matrix3.IDENTITY
     assert fake_spicedb.named('used_basenames')[-1][1]['inst'] == inst
+
+
+def test_snapshot_clock_counts() -> None:
+    obs = snapshot(SPACECRAFT_CLOCK_START_COUNT='34502:00:769')
+    assert obs.spacecraft_clock_start_count == '34502:00:769'
+    assert obs.spacecraft_clock_stop_count == CLOCK_COUNT
+
+
+@pytest.mark.parametrize(('key', 'subfields'), [
+    ('SPACECRAFT_CLOCK_START_COUNT', ['spacecraft_clock_start_count']),
+    ('FILTER_NAME', ['filter']),
+    ('TARGET_NAME', ['label_target', 'target']),
+], ids=['start-count', 'filter', 'target'])
+def test_snapshot_leaves_out_what_no_source_gives(key: str, subfields: list[str]) -> None:
+    changes: dict[str, Any] = {key: 'UNK'}
+    obs = snapshot(**changes)
+    assert [name for name in subfields if hasattr(obs, name)] == []
+    assert key not in obs.dict
+
+
+def test_snapshot_without_a_target_is_lit_by_the_sun() -> None:
+    assert snapshot(TARGET_NAME=None).lightsource == 'SUN'
 
 
 def test_snapshot_camera_from_instrument_name() -> None:
@@ -457,20 +502,23 @@ def test_snapshot_tracker() -> None:
 ##########################################################################################
 
 
-def test_vicar_to_pds3() -> None:
-    dict_ = VoyagerISS._vicar_to_pds3(vicar.VicarLabel.from_file(GEOMED_VICAR))
-    assert dict_['INSTRUMENT_HOST_NAME'] == 'VOYAGER 1'
-    assert dict_['INSTRUMENT_ID'] == 'ISSN'
-    assert dict_['PRODUCT_TYPE'] == 'GEOMETRICALLY_CORRECTED_IMAGE'
-    assert dict_['IMAGE_NUMBER'] == '34502.01'
-    assert dict_['IMAGE_ID'] == '0469S1-015'
-    assert dict_['STOP_TIME'] == '1980-10-29T05:57:22'
-    assert dict_['IMAGE_TIME'] == '1980-10-29T05:57:22'
-    assert dict_['EXPOSURE_DURATION'] == pytest.approx(EXPOSURE)
-    assert dict_['FILTER_NAME'] == 'VIOLET'
-    assert dict_['FILTER_NUMBER'] == 1
-    assert dict_['TARGET_NAME'] == 'SATURN'
-    assert dict_['MISSION_PHASE_NAME'] == 'SATURN ENCOUNTER'
+def test_header_items() -> None:
+    items = VoyagerISS._header_items(vicar.VicarLabel.from_file(GEOMED_VICAR))
+    assert items == {
+        'INSTRUMENT_HOST_NAME'       : 'VOYAGER 1',
+        'INSTRUMENT_ID'              : 'ISSN',
+        'PRODUCT_TYPE'               : 'GEOMETRICALLY_CORRECTED_IMAGE',
+        'IMAGE_NUMBER'               : '34502.01',
+        'SPACECRAFT_CLOCK_STOP_COUNT': CLOCK_COUNT,
+        'IMAGE_ID'                   : '0469S1-015',
+        'IMAGE_TIME'                 : dt.datetime(1980, 10, 29, 5, 57, 22),
+        'STOP_TIME'                  : dt.datetime(1980, 10, 29, 5, 57, 22),
+        'EXPOSURE_DURATION'          : EXPOSURE,
+        'FILTER_NAME'                : 'VIOLET',
+        'FILTER_NUMBER'              : '1',
+        'TARGET_NAME'                : 'SATURN',
+        'MISSION_PHASE_NAME'         : 'SATURN ENCOUNTER',
+    }
 
 
 def _vicar_header(**keywords: Any) -> vicar.VicarImage:
@@ -482,13 +530,22 @@ def _vicar_header(**keywords: Any) -> vicar.VicarImage:
     return vic
 
 
+def _header_items(**lines: str) -> dict[str, Any]:
+    """The items of a VICAR header holding the test LAB02, LAB03 and LAB05 lines, any of
+    which a keyword replaces."""
+
+    keywords = {'LAB02': _LAB02, 'LAB03': _LAB03, 'LAB05': _LAB05} | lines
+    items: dict[str, Any] = VoyagerISS._header_items(_vicar_header(**keywords))
+    return items
+
+
 class _TaskHeader:
     """A stand-in VICAR header with the Voyager lines and the given processing tasks."""
 
     def __init__(self, tasks: list[str]) -> None:
         self._tasks = ['TASK', *tasks]
 
-    def as_dict(self) -> dict[str, str]:
+    def as_dict(self, unique: bool = True) -> dict[str, str]:
         return {'LAB02': _LAB02, 'LAB03': _LAB03, 'LAB05': _LAB05}
 
     def get(self, name: str, default: Any) -> Any:
@@ -501,17 +558,15 @@ class _TaskHeader:
     (['VGRFILLI', 'RESSAR77', 'FICOR77'], 'CALIBRATED_IMAGE'),
     (['VGRFILLI', 'RESSAR77', 'FICOR77', 'GEOMA'], 'GEOMETRICALLY_CORRECTED_IMAGE'),
 ], ids=['raw', 'cleaned', 'calib', 'geomed'])
-def test_vicar_product_type(tasks: list[str], product: str) -> None:
-    assert VoyagerISS._vicar_to_pds3(_TaskHeader(tasks))['PRODUCT_TYPE'] == product
+def test_header_product_type(tasks: list[str], product: str) -> None:
+    assert VoyagerISS._header_items(_TaskHeader(tasks))['PRODUCT_TYPE'] == product
 
 
-def test_vicar_target_underscores_and_wide_angle() -> None:
-    lab03 = _LAB03.replace('NA CAMERA', 'WA CAMERA')
-    lab05 = _LAB05.replace('SATURN     ', 'S_RINGS    ')
-    dict_ = VoyagerISS._vicar_to_pds3(_vicar_header(LAB02=_LAB02, LAB03=lab03,
-                                                    LAB05=lab05))
-    assert dict_['TARGET_NAME'] == 'S RINGS'
-    assert dict_['INSTRUMENT_ID'] == 'ISSW'
+def test_header_target_underscores_and_wide_angle() -> None:
+    items = _header_items(LAB03=_LAB03.replace('NA CAMERA', 'WA CAMERA'),
+                          LAB05=_LAB05.replace('SATURN     ', 'S_RINGS    '))
+    assert items['TARGET_NAME'] == 'S RINGS'
+    assert items['INSTRUMENT_ID'] == 'ISSW'
 
 
 @pytest.mark.parametrize(('filter_text', 'filter_name'), [
@@ -520,19 +575,100 @@ def test_vicar_target_underscores_and_wide_angle() -> None:
     ('CH4/JS', 'CH4_JS'),
     ('CH4/U ', 'CH4_U'),
 ], ids=['padded', 'short', 'slash', 'slash-padded'])
-def test_vicar_filter_is_spelled_as_the_label_spells_it(filter_text: str,
-                                                        filter_name: str) -> None:
-    lab03 = _LAB03.replace('(VIOLET)', f'({filter_text})')
-    dict_ = VoyagerISS._vicar_to_pds3(_vicar_header(LAB02=_LAB02, LAB03=lab03,
-                                                    LAB05=_LAB05))
-    assert dict_['FILTER_NAME'] == filter_name
+def test_header_filter_is_spelled_as_the_label_spells_it(filter_text: str,
+                                                         filter_name: str) -> None:
+    items = _header_items(LAB03=_LAB03.replace('(VIOLET)', f'({filter_text})'))
+    assert items['FILTER_NAME'] == filter_name
 
 
-@pytest.mark.parametrize('keywords', [{'LAB02': _LAB02}, {'LAB03': _LAB03}],
-                         ids=['no-lab03', 'no-lab02'])
-def test_vicar_without_voyager_lines(keywords: dict[str, str]) -> None:
-    with pytest.raises(oops.host.HostFormatError, match='no Voyager LAB02 or LAB03'):
-        VoyagerISS._vicar_to_pds3(_vicar_header(**keywords))
+def test_header_clock_count_is_spelled_as_the_label_spells_it() -> None:
+    items = _header_items(LAB02=_LAB02.replace('FDS 34502.01', 'FDS 09096.16'))
+    assert items['IMAGE_NUMBER'] == '09096.16'
+    assert items['SPACECRAFT_CLOCK_STOP_COUNT'] == '9096:16:001'
+
+
+# Fields of LAB02 and LAB03 as the ground system garbled them in real VGISS headers
+@pytest.mark.parametrize(('line', 'old', 'new', 'items'), [
+    ('LAB02', 'SCET 80.303 05:57:22', 'SCET **.*** **:**:**',
+     ['IMAGE_TIME', 'STOP_TIME', 'MISSION_PHASE_NAME']),
+    ('LAB02', 'SCET 80.303 05:57:22', 'SCET 79.170 34:07:00',
+     ['IMAGE_TIME', 'STOP_TIME', 'MISSION_PHASE_NAME']),
+    ('LAB02', 'SCET 80.303 05:57:22', 'SCET 08.272 07:05:04',
+     ['IMAGE_TIME', 'STOP_TIME', 'MISSION_PHASE_NAME']),
+    ('LAB02', 'PICNO 0469S1-015', 'PICNO **********', ['IMAGE_ID']),
+    ('LAB02', 'PICNO 0469S1-015', 'PICNO 0000Z1+000', ['IMAGE_ID']),
+    ('LAB02', 'FDS 34502.01', 'FDS 0.00    ',
+     ['IMAGE_NUMBER', 'SPACECRAFT_CLOCK_STOP_COUNT']),
+    ('LAB02', 'FDS 34502.01', 'FDS 00000.00',
+     ['IMAGE_NUMBER', 'SPACECRAFT_CLOCK_STOP_COUNT']),
+    ('LAB03', 'EXP    1920.0 MSEC', 'EXP    ****** MSEC', ['EXPOSURE_DURATION']),
+    ('LAB03', 'FILT 1(VIOLET)', 'FILT *(******)', ['FILTER_NAME', 'FILTER_NUMBER']),
+    ('LAB05', 'SATURN     ', '           ', ['TARGET_NAME']),
+], ids=['scet-asterisks', 'scet-hour-34', 'scet-year-08', 'picno-asterisks',
+        'picno-placeholder', 'fds-short', 'fds-zero', 'exposure', 'filter',
+        'target-blank'])
+def test_header_leaves_out_a_garbled_field(line: str, old: str, new: str,
+                                           items: list[str]) -> None:
+    lines = {'LAB02': _LAB02, 'LAB03': _LAB03, 'LAB05': _LAB05}
+    assert old in lines[line]
+    found = _header_items(**{line: lines[line].replace(old, new)})
+    assert [item for item in items if item in found] == []
+    assert len(found) == 13 - len(items)
+
+
+def test_header_without_voyager_lines() -> None:
+    assert VoyagerISS._header_items(_vicar_header()) == {
+        'PRODUCT_TYPE': 'DECOMPRESSED_RAW_IMAGE'}
+
+##########################################################################################
+# Merging the label and the VICAR header
+##########################################################################################
+
+
+def test_merge_takes_an_item_from_the_source_that_gives_it() -> None:
+    merged = VoyagerISS._merge_items({'STOP_TIME': 'label', 'NOTE': 'NONE'},
+                                     {'EXPOSURE_DURATION': 0.005, 'IMAGE_ID': 'x'})
+    assert merged == {'STOP_TIME': 'label', 'NOTE': 'NONE', 'EXPOSURE_DURATION': 0.005,
+                      'IMAGE_ID': 'x'}
+
+
+# For each item, a label value and a differing header value, as in the named VGISS raw
+# image, and the value the item's resolution rule chooses
+@pytest.mark.parametrize(('item', 'label_value', 'header_value', 'chosen'), [
+    ('INSTRUMENT_HOST_NAME', 'VOYAGER 1', 'VOYAGER 2', 'VOYAGER 1'),
+    ('INSTRUMENT_ID', 'ISSN', 'ISSW', 'ISSN'),                                  # C1570449
+    ('PRODUCT_TYPE', 'CLEANED_IMAGE', 'CALIBRATED_IMAGE', 'CLEANED_IMAGE'),
+    ('IMAGE_NUMBER', '34502.01', '34502.02', '34502.01'),
+    ('SPACECRAFT_CLOCK_STOP_COUNT', '34502:01:001', '34502:02:001', '34502:01:001'),
+    ('IMAGE_ID', '0469S1-015', '0469S1-016', '0469S1-015'),
+    ('IMAGE_TIME', dt.datetime(1979, 5, 29, 9, 1, 38),                        # C1941239
+     dt.datetime(1979, 5, 29, 9, 0, 50), dt.datetime(1979, 5, 29, 9, 1, 38)),
+    ('STOP_TIME', dt.datetime(1979, 5, 29, 9, 1, 38, 500000),
+     dt.datetime(1979, 5, 29, 9, 1, 38), dt.datetime(1979, 5, 29, 9, 1, 38, 500000)),
+    ('EXPOSURE_DURATION', 0.04, 0.045, 0.045),                                  # C2037439
+    ('EXPOSURE_DURATION', 0.0, 0.0075, 0.0075),                                 # C1565612
+    ('EXPOSURE_DURATION', 351.35, 351.359, 351.359),                            # C1138003
+    ('EXPOSURE_DURATION', 0.48, 0.0125, 0.48),                                  # C1549450
+    ('EXPOSURE_DURATION', 96.0, 0.005, 96.0),                                   # C2049737
+    ('FILTER_NAME', 'ORANGE', 'VIOLET', 'ORANGE'),                              # C1984746
+    ('FILTER_NUMBER', '3', '1', '3'),
+    ('TARGET_NAME', 'ENCELADUS', 'ENCELADU', 'ENCELADUS'),                      # C4398323
+    ('TARGET_NAME', 'S RINGS', 'SATURN', 'S RINGS'),                            # C4364518
+    ('MISSION_PHASE_NAME', 'SATURN ENCOUNTER', 'JUPITER ENCOUNTER',
+     'SATURN ENCOUNTER'),
+], ids=['spacecraft', 'camera', 'product', 'image-number', 'clock-count', 'picno',
+        'image-time', 'stop-time', 'exposure-truncated', 'exposure-truncated-to-zero',
+        'exposure-truncated-long', 'exposure-different', 'exposure-long', 'filter-name',
+        'filter-number', 'target-truncated', 'target-different', 'phase'])
+def test_merge_resolution_rule(item: str, label_value: Any, header_value: Any,
+                               chosen: Any) -> None:
+    merged = VoyagerISS._merge_items({item: label_value}, {item: header_value})
+    assert merged == {item: chosen}
+
+
+def test_every_header_item_has_a_resolution_rule() -> None:
+    items = VoyagerISS._header_items(vicar.VicarLabel.from_file(GEOMED_VICAR))
+    assert set(items) == set(iss._RESOLUTION)
 
 ##########################################################################################
 # from_file()
@@ -560,9 +696,135 @@ def test_from_file_label_for_astrometry_reads_only_the_label(
     label = tmp_path / GEOMED_LABEL.name
     shutil.copy(GEOMED_LABEL, label)
     obs = VoyagerISS.from_file(label, astrometry=True)
-    assert obs.if_scale is None
+    assert [name for name in ('if_scale', 'header_dict', 'data') if hasattr(obs, name)] \
+        == []
+    assert obs.label_dict == pdsparser.Pds3Label(label, sources=True).as_dict()
     assert obs.spacecraft == 1
     assert obs.basename == GEOMED_VICAR.name
+
+
+def test_from_file_label_reads_the_label_and_the_image(tmp_path: pathlib.Path) -> None:
+    (label, image) = _write_label_and_image(tmp_path, label3=_LABEL3)
+    obs = VoyagerISS.from_file(label)
+    assert obs.data.tolist() == np.arange(64).reshape(8, 8).tolist()
+    assert obs.label_dict == pdsparser.Pds3Label(label, sources=True).as_dict()
+    assert obs.header_dict == vicar.VicarLabel.from_file(image).as_dict(unique=False)
+
+
+def test_from_file_label_merges_both_sources(tmp_path: pathlib.Path) -> None:
+    (label, _image) = _write_label_and_image(tmp_path, label3=_LABEL3)
+    obs = VoyagerISS.from_file(label)
+    # Every key of either source, with the label's value for an item both give
+    assert set(obs.dict) == set(obs.label_dict) | set(obs.header_dict) | {'IMAGE_ID'}
+    assert obs.dict['LAB02'] == _LAB02
+    assert obs.dict['LABEL3'] == _LABEL3
+    assert obs.dict['STOP_TIME'] == obs.label_dict['STOP_TIME']
+    assert obs.dict['IMAGE_ID'] == '0469S1-015'
+
+
+def test_from_file_image_reads_only_the_image(tmp_path: pathlib.Path) -> None:
+    image = _write_vicar(tmp_path, label3=_LABEL3)
+    # A label beside the image is never read
+    (tmp_path / 'C3450201.LBL').write_text('NOT A LABEL')
+    obs = VoyagerISS.from_file(image)
+    assert obs.data.tolist() == np.arange(64).reshape(8, 8).tolist()
+    assert obs.header_dict == vicar.VicarLabel.from_file(image).as_dict(unique=False)
+    assert not hasattr(obs, 'label_dict')
+    assert obs.dict['LABEL3'] == _LABEL3
+
+
+def test_from_file_image_for_astrometry_reads_no_data() -> None:
+    obs = VoyagerISS.from_file(GEOMED_VICAR, astrometry=True)
+    assert [name for name in ('data', 'label_dict') if hasattr(obs, name)] == []
+    assert obs.header_dict['LAB02'] == _LAB02
+
+
+def test_from_file_label_resolves_differences(tmp_path: pathlib.Path) -> None:
+    """Where the label and the VICAR header differ, each item follows its rule."""
+
+    # The label truncates the exposure of 1.9255 s to 1.92 s, and names the target
+    # differently
+    lab03 = _LAB03.replace('EXP    1920.0 MSEC', 'EXP    1925.5 MSEC')
+    (label, _image) = _write_label_and_image(tmp_path, lab03=lab03)
+    text = label.read_text()
+    text = text.replace('TARGET_NAME                     = "SATURN"',
+                        'TARGET_NAME                     = "TITAN"')
+    label.write_text(text)
+    obs = VoyagerISS.from_file(label)
+    assert obs.texp == pytest.approx(1.9255)
+    assert obs.dict['EXPOSURE_DURATION'] == pytest.approx(1.9255)
+    assert obs.label_dict['EXPOSURE_DURATION'] == pytest.approx(EXPOSURE)
+    assert obs.label_target == 'TITAN'
+    assert obs.target == 'TITAN'
+
+
+def test_from_file_label_fills_a_null_from_the_header(tmp_path: pathlib.Path) -> None:
+    (label, _image) = _write_label_and_image(tmp_path)
+    text = label.read_text()
+    for key in ('IMAGE_TIME', 'STOP_TIME'):
+        text = text.replace(f'{key:32}= 1980-10-29T05:57:22.00', f'{key:32}= "UNK"')
+    text = text.replace('EXPOSURE_DURATION               = 1.920 <SECOND>',
+                        'EXPOSURE_DURATION               = "UNK"')
+    label.write_text(text)
+    obs = VoyagerISS.from_file(label)
+    assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
+    assert obs.texp == pytest.approx(EXPOSURE)
+    assert obs.label_dict['STOP_TIME'] == 'UNK'
+    assert obs.dict['STOP_TIME'] == dt.datetime(1980, 10, 29, 5, 57, 22)
+
+
+def test_from_file_label_reads_an_image_with_a_garbled_header(
+        tmp_path: pathlib.Path) -> None:
+    """A label loads even when its image's SCET is unknown, and the image file alone
+    then reports what is missing."""
+
+    lab02 = _LAB02.replace('SCET 80.303 05:57:22', 'SCET **.*** **:**:**')
+    (label, image) = _write_label_and_image(tmp_path, lab02=lab02)
+    obs = VoyagerISS.from_file(label)
+    assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
+    with pytest.raises(oops.host.HostFormatError,
+                       match=r'C3450201\.IMG has no STOP_TIME or IMAGE_TIME'):
+        VoyagerISS.from_file(image)
+
+
+def test_from_file_parsed_label_without_a_path(tmp_path: pathlib.Path) -> None:
+    label = pdsparser.Pds3Label(RAW_LABEL.read_text())
+    obs = VoyagerISS.from_file(label, astrometry=True)
+    assert [name for name in ('filepath', 'basename', 'abspath', 'image_url')
+            if hasattr(obs, name)] == []
+    with pytest.raises(oops.host.HostFormatError, match='without a file path'):
+        VoyagerISS.from_file(label)
+
+
+def test_from_file_parsed_image_without_a_path() -> None:
+    vic = vicar.VicarImage.from_array(np.arange(64, dtype='uint8').reshape(8, 8))
+    for (key, value) in {'LAB02': _LAB02, 'LAB03': _LAB03, 'LAB05': _LAB05}.items():
+        vic[key] = value
+    obs = VoyagerISS.from_file(vic)
+    assert obs.data.tolist() == np.arange(64).reshape(8, 8).tolist()
+    assert [name for name in ('filepath', 'basename', 'abspath', 'image_url')
+            if hasattr(obs, name)] == []
+
+
+def test_from_file_parsed_vicar_label_without_a_path_cannot_read_data() -> None:
+    label = vicar.VicarLabel.from_file(GEOMED_VICAR)
+    label.filepath = None
+    with pytest.raises(oops.host.HostFormatError, match='without a file path'):
+        VoyagerISS.from_file(label)
+
+
+def test_from_file_remote_label_for_astrometry_has_no_abspath() -> None:
+    params: dict[str, Any] = {}
+    overrides = dict.fromkeys(OVERRIDE_NAMES)
+    image = FCPath('https://pds-rings.seti.org/holdings/volumes/X.IMG')
+    VoyagerISS._apply_path_overrides(params, image, False, overrides)
+    assert 'abspath' not in params
+    assert params['image_url'] == 'https://pds-rings.seti.org/holdings/volumes/X.IMG'
+
+
+def test_from_file_local_label_for_astrometry_has_an_abspath() -> None:
+    obs = VoyagerISS.from_file(GEOMED_LABEL, astrometry=True)
+    assert obs.abspath == GEOMED_VICAR.resolve()
 
 
 def test_from_file_label_needs_the_image_file_for_data(tmp_path: pathlib.Path) -> None:
@@ -589,15 +851,21 @@ def test_from_file_label_reports_an_invalid_vicar_header(tmp_path: pathlib.Path)
         VoyagerISS.from_file(label)
 
 
-def _label_with_note_on_its_own_line(directory: pathlib.Path) -> pathlib.Path:
+def _label_with_note_on_its_own_line(directory: pathlib.Path, *,
+                                     unquoted: str | None = None) -> pathlib.Path:
     """A copy of the GEOMED label and image whose NOTE value starts on the line after its
-    keyword, as in C2673426_GEOMED.LBL of VGISS_7205; return the label's path."""
+    keyword, as in C2673426_GEOMED.LBL of VGISS_7205; return the label's path. If
+    `unquoted` is given, it replaces the quoted SHUTTER_MODE_ID without quotes, which
+    the strict parser rejects."""
 
     shutil.copy(GEOMED_VICAR, directory)
     text = GEOMED_LABEL.read_text().replace(
         'NOTE                            = "NONE"',
         'NOTE                            =\n"1 WA HALF OF 6 NA/WA ATMOS DYNAMICS PAIRS '
         'IMAGING URANUS. EXPS SET FOR HI\nLATS."')
+    if unquoted is not None:
+        text = text.replace('SHUTTER_MODE_ID                 = "NAONLY"',
+                            f'SHUTTER_MODE_ID                 = {unquoted}')
     label = directory / GEOMED_LABEL.name
     label.write_text(text)
     return label
@@ -610,6 +878,15 @@ def test_from_file_label_the_fast_parser_rejects(tmp_path: pathlib.Path) -> None
     obs = VoyagerISS.from_file(label, astrometry=True)
     assert obs.dict['NOTE'].startswith('1 WA HALF OF 6 NA/WA ATMOS DYNAMICS PAIRS')
     assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
+
+
+def test_from_file_label_only_the_loose_parser_reads(tmp_path: pathlib.Path) -> None:
+    label = _label_with_note_on_its_own_line(tmp_path, unquoted='N/A')
+    with pytest.raises(pdsparser.PdsSyntaxError):
+        pdsparser.Pds3Label(label, method='strict')
+    obs = VoyagerISS.from_file(label, astrometry=True)
+    assert obs.label_dict['SHUTTER_MODE_ID'] == 'N/A'
+    assert 'SHUTTER_MODE_ID' not in obs.dict
 
 
 def test_from_file_label_honors_another_parser_method(tmp_path: pathlib.Path) -> None:
@@ -652,7 +929,7 @@ def test_from_file_vicar_if_scale_from_its_header() -> None:
 
 def test_from_file_raw_vicar_has_no_if_scale() -> None:
     obs = VoyagerISS.from_file(RAW_LABEL.with_suffix('.IMG'), astrometry=True)
-    assert obs.if_scale is None
+    assert not hasattr(obs, 'if_scale')
 
 
 @pytest.mark.parametrize(('label3', 'if_scale'), [
@@ -663,12 +940,14 @@ def test_from_file_label_if_scale_from_the_image_header(tmp_path: pathlib.Path,
                                                         label3: str | None,
                                                         if_scale: float | None) -> None:
     (label, image) = _write_label_and_image(tmp_path, label3=label3)
-    from_label = VoyagerISS.from_file(label).if_scale
-    assert from_label == VoyagerISS.from_file(image).if_scale
+    from_label = VoyagerISS.from_file(label)
+    from_image = VoyagerISS.from_file(image)
     if if_scale is None:
-        assert from_label is None
+        assert not hasattr(from_label, 'if_scale')
+        assert not hasattr(from_image, 'if_scale')
     else:
-        assert from_label == pytest.approx(if_scale, rel=1.e-12)
+        assert from_label.if_scale == pytest.approx(if_scale, rel=1.e-12)
+        assert from_image.if_scale == from_label.if_scale
 
 
 @pytest.mark.parametrize('path', [RAW_LABEL, GEOMED_LABEL, GEOMED_VICAR],
@@ -698,8 +977,8 @@ def test_from_file_label_reads_the_data_its_header_describes(
 
 def _write_label_and_image(directory: pathlib.Path, *, records_early: int = 0,
                            label3: str | None = None, image_name: str = 'C3450201.IMG',
-                           pointer_name: str | None = None
-                           ) -> tuple[pathlib.Path, pathlib.Path]:
+                           pointer_name: str | None = None, lab02: str = _LAB02,
+                           lab03: str = _LAB03) -> tuple[pathlib.Path, pathlib.Path]:
     """Write a small Voyager VICAR image and a PDS3 label for it; return their paths.
 
     Parameters:
@@ -710,9 +989,12 @@ def _write_label_and_image(directory: pathlib.Path, *, records_early: int = 0,
         image_name: The name of the image file.
         pointer_name: The name of the image file in the label's IMAGE pointer; None for
             `image_name`.
+        lab02: The LAB02 line of the VICAR header.
+        lab03: The LAB03 line of the VICAR header.
     """
 
-    image = _write_vicar(directory, name=image_name, label3=label3)
+    image = _write_vicar(directory, name=image_name, label3=label3, lab02=lab02,
+                         lab03=lab03)
     pointer_name = pointer_name or image_name
     lblsize = vicar.VicarLabel.from_file(image)['LBLSIZE']
     assert isinstance(lblsize, int)
@@ -754,12 +1036,13 @@ def _strip_objects(text: str, names: tuple[str, ...]) -> str:
 
 
 def _write_vicar(directory: pathlib.Path, *, name: str = 'C3450201.IMG',
-                 label3: str | None = None) -> pathlib.Path:
+                 label3: str | None = None, lab02: str = _LAB02,
+                 lab03: str = _LAB03) -> pathlib.Path:
     """Write a small Voyager VICAR image with no PDS3 label; return its path. The header
-    holds LABEL3 if `label3` is given."""
+    holds LABEL3 if `label3` is given, and the given LAB02 and LAB03."""
 
     vic = vicar.VicarImage.from_array(np.arange(64, dtype='uint8').reshape(8, 8))
-    for (key, value) in {'LAB02': _LAB02, 'LAB03': _LAB03, 'LAB05': _LAB05}.items():
+    for (key, value) in {'LAB02': lab02, 'LAB03': lab03, 'LAB05': _LAB05}.items():
         vic[key] = value
     if label3 is not None:
         vic['LABEL3'] = label3
@@ -825,16 +1108,17 @@ def test_from_index_merges_the_supplement() -> None:
     assert obs.dict['SPACECRAFT_CLOCK_PARTITION_NUMBER'] == 2
 
 
-def test_from_index_filepath() -> None:
+def test_from_index_names_the_image_file() -> None:
     obs = VoyagerISS.from_index(INDEX)[9]
-    assert obs.filepath == 'VGISS_6109/DATA/C34502XX/C3450201_RAW.LBL'
-    assert obs.basename == 'C3450201_RAW.LBL'
+    assert obs.filepath == 'VGISS_6109/DATA/C34502XX/C3450201_RAW.IMG'
+    assert obs.basename == 'C3450201_RAW.IMG'
 
 
 def test_from_index_consumer_subfields() -> None:
     obs = VoyagerISS.from_index(INDEX)[9]
     assert obs.spacecraft == 1
-    assert obs.if_scale is None
+    assert not hasattr(obs, 'if_scale')
+    assert obs.spacecraft_clock_stop_count == CLOCK_COUNT
     assert type(obs.filter) is str
     assert obs.filter == 'VIOLET'
     assert type(obs.label_target) is str
@@ -926,7 +1210,7 @@ def test_from_index_leaves_out_images_without_a_record(fake_spice: FakeSpice) ->
     fake_spice.missing.add(fake_scencd(-31, f'2/{CLOCK_COUNT}'))
     names = [obs.basename for obs in VoyagerISS.from_index(INDEX)]
     assert len(names) == INDEX_ROWS - 1
-    assert 'C3450201_RAW.LBL' not in names
+    assert 'C3450201_RAW.IMG' not in names
 
 
 def test_from_index_keeps_them_with_a_custom_frame(fake_spice: FakeSpice) -> None:
@@ -940,7 +1224,14 @@ def test_from_index_leaves_out_images_without_a_time() -> None:
     rows[9]['IMAGE_TIME'] = 'UNK'
     names = [obs.basename for obs in VoyagerISS.from_index(INDEX, row_dicts=rows)]
     assert len(names) == INDEX_ROWS - 1
-    assert 'C3450201_RAW.LBL' not in names
+    assert 'C3450201_RAW.IMG' not in names
+
+
+def test_from_index_leaves_out_images_without_an_exposure() -> None:
+    rows = VoyagerISS._read_index_rows(INDEX, supplement=SUPPLEMENT)
+    rows[9]['EXPOSURE_DURATION'] = -99.9999
+    names = [obs.basename for obs in VoyagerISS.from_index(INDEX, row_dicts=rows)]
+    assert names == [row['PRODUCT_ID'] for (i, row) in enumerate(rows) if i != 9]
 
 
 def test_from_index_filter() -> None:
