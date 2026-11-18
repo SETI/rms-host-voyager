@@ -568,7 +568,9 @@ def test_from_file_label_finds_the_image_file_in_another_case(
     shutil.copy(GEOMED_LABEL, label)
     image = tmp_path / GEOMED_VICAR.name.lower()
     shutil.copy(GEOMED_VICAR, image)
-    assert VoyagerISS.from_file(label, astrometry=True).basename == image.name
+    # On a case-insensitive file system the name as given also finds the file
+    obs = VoyagerISS.from_file(label, astrometry=True)
+    assert pathlib.Path(obs.abspath).samefile(image)
 
 
 def test_from_file_label_reports_an_invalid_vicar_header(tmp_path: pathlib.Path) -> None:
