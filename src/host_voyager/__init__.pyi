@@ -34,6 +34,9 @@ __all__ = ['VoyagerISS']
 
 class VoyagerISS(Host):
     # The runtime names the first parameter `fileinfo`, where Host names it `filepath`.
+    # An image with no C-kernel record raises oops.host.HostError whose cause is the
+    # SPICE exception and whose message ends with its short code, such as
+    # "SPICE(CKINSUFFDATA)".
     @staticmethod
     def from_file(  # type: ignore[override]
         fileinfo: str | pathlib.Path | FCPath | Pds3Label | VicarLabel

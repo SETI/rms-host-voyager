@@ -24,6 +24,10 @@ __all__ = ['VoyagerISS']
 # by the time; see docs/pointing.rst. The tolerance is in clock ticks of 60 ms.
 _TICK_TOLERANCE = 20
 
+# The short error code at the start of a SPICE error message, as in
+#   SPICE(CKINSUFFDATA) -- sigerr -- insufficient C kernel data to evaluate ...
+_SPICE_ERROR_CODE = re.compile(r'SPICE\([A-Z0-9_]+\)')
+
 # NAIF IDs: the scan platform is -31100 or -32100; its frame has the same ID, and the
 # camera frames VG{n}_ISSNA and VG{n}_ISSWA are the platform ID minus 1 and minus 2
 _SCAN_PLATFORM_ID = {1: -31100, 2: -32100}
@@ -230,7 +234,10 @@ class VoyagerISS(oops.Host):
 
         Raises:
             oops.host.HostError: If `frame` is not given and the C kernels hold no record
-                for the image's spacecraft clock stop count.
+                for the image's spacecraft clock stop count. The SPICE exception is the
+                cause, and the message ends with its short error code, as in
+                "...: SPICE(CKINSUFFDATA)", so that missing SPICE data can be told
+                from other failures.
             oops.host.HostFormatError: If a VICAR header lacks the Voyager LAB02 or LAB03
                 line, or if the label gives neither STOP_TIME nor IMAGE_TIME.
             oops.host.PdsHostError: If the PDS3 label cannot be parsed.
@@ -750,7 +757,10 @@ class VoyagerISS(oops.Host):
             oops.frame.Cmatrix: An unregistered frame relative to J2000.
 
         Raises:
-            _UnusableImageError: If the C kernels hold no record for the clock count.
+            _UnusableImageError: If the C kernels hold no record for the clock count. Its
+                cause is the exception that SPICE raised, and its message ends with the
+                SPICE short error code, such as "SPICE(CKINSUFFDATA)", if that exception
+                gives one.
         """
 
         count = VoyagerISS._clock_count(dict_)
@@ -761,8 +771,10 @@ class VoyagerISS(oops.Host):
             (j2000_to_platform, _) = cspyce.ckgp(platform_id, ticks, _TICK_TOLERANCE,
                                                  'J2000')
         except (ValueError, LookupError, OSError) as err:
+            code = _SPICE_ERROR_CODE.search(str(err))
+            suffix = f': {code[0]}' if code else ''
             raise _UnusableImageError(f'no Voyager {vgr} scan platform pointing for '
-                                      f'clock count {count}') from err
+                                      f'clock count {count}{suffix}') from err
 
         platform_to_camera = cspyce.pxform(f'VG{vgr}_SCAN_PLATFORM',
                                            f'VG{vgr}_ISS{camera[0]}A', 0.)

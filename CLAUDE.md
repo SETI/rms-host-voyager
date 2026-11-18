@@ -96,7 +96,10 @@ apply here to the stubs described below.
   matrix.
 - An image with no time or (without a `frame` override) no record raises
   `_UnusableImageError`, a `HostError`, from `from_file()`, and `from_index()` leaves it
-  out. Across VGISS that is 17 images with no time and 2,137 with no record, 1,090 of them
+  out. For a missing record its cause is the SPICE exception and its message ends with the
+  SPICE short code, as in `...: SPICE(CKINSUFFDATA)`, which is how SpinDoctor tells
+  missing SPICE data from other failures, as for the hosts that let the SPICE exception
+  through. Across VGISS that is 17 images with no time and 2,137 with no record, 1,090 of them
   in VGISS_8210.
 - `from_index()` accepts only a `VGISS_xxxx_raw_image_index.lbl`, one row per RAW image,
   never the full `VGISS_xxxx_index.lbl` (one row per label: RAW, CLEANED, CALIB, GEOMED

@@ -297,9 +297,34 @@ def test_missing_record_is_unusable(fake_spice: FakeSpice) -> None:
         snapshot()
 
 
+def test_missing_record_names_the_spice_error(fake_spice: FakeSpice) -> None:
+    """The message carries the SPICE short error code, by which a caller recognizes
+    missing SPICE data, and the SPICE exception is kept as the cause."""
+
+    fake_spice.missing.add(fake_scencd(-31, f'2/{CLOCK_COUNT}'))
+    with pytest.raises(oops.host.HostError) as info:
+        snapshot()
+    assert str(info.value) == (f'no Voyager 1 scan platform pointing for clock count '
+                               f'{CLOCK_COUNT}: SPICE(CKINSUFFDATA)')
+    assert isinstance(info.value.__cause__, OSError)
+
+
 def test_count_in_no_partition_is_unusable() -> None:
-    with pytest.raises(oops.host.HostError, match='no Voyager 1 scan platform pointing'):
+    with pytest.raises(oops.host.HostError) as info:
         snapshot(SPACECRAFT_CLOCK_PARTITION_NUMBER=1)
+    assert str(info.value) == ('no Voyager 1 scan platform pointing for clock count '
+                               f'{CLOCK_COUNT}: SPICE(NOTINPART)')
+
+
+def test_missing_record_without_a_spice_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    def ckgp(*args: Any) -> None:
+        raise LookupError('no record')
+
+    monkeypatch.setattr(iss.cspyce, 'ckgp', ckgp)
+    with pytest.raises(oops.host.HostError) as info:
+        snapshot()
+    assert str(info.value) == ('no Voyager 1 scan platform pointing for clock count '
+                               f'{CLOCK_COUNT}')
 
 
 def test_custom_frame_skips_the_c_kernels(fake_spice: FakeSpice,
