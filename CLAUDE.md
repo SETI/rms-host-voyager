@@ -16,23 +16,30 @@ standards. The repo layout, CI and scripts come from `rms-devenv/repo_template`,
 rms-polymath adapted them, by way of `rms-host-cassini` and `rms-host-galileo`. Model
 changes to packaging, CI or scripts on rms-polymath's `pyproject.toml`, `.flake8`,
 `.github/workflows/` and `scripts/`, and keep them in step with rms-host-cassini and
-rms-host-galileo. Some details in the rules are
-polymath-specific, for example the two published `.pyi` stubs and `stubtest`. Ignore those
-until this repo has the equivalent.
+rms-host-galileo. The rules' references to the two published `.pyi` stubs and `stubtest`
+apply here to the stubs described below.
 
 - Hand-aligned columns (assignments, dict colons, `from x     import`) are deliberate. Never
   run `ruff format` or any other auto-formatter.
 - Keep the file banners: a line of 90 `#` characters at the top and bottom of each module,
-  with a `# host_voyager/<file>.py` header.
+  with a `# host_voyager/<file>.py` header (`.pyi` for a stub).
 
 ## Current state
 
 - `scripts/run-all-checks.sh` is the single source of truth for the checks: ruff, flake8
-  `E12`/`E13`, mypy on `tests/`, pytest, pyroma, pip-audit, the Sphinx build (`-W -n`),
-  codespell and PyMarkdown. `ruff format` is disabled. `.github/workflows/run-tests.yml`
-  runs the same set. `scripts/setup-venv.sh` builds the `venv/` that the scripts expect;
-  set `VENV` to use another.
+  `E12`/`E13`, mypy on `tests/`, pytest, pyroma, stubtest, pip-audit, the Sphinx build
+  (`-W -n`), codespell and PyMarkdown. `ruff format` is disabled.
+  `.github/workflows/run-tests.yml` runs the same set. `scripts/setup-venv.sh` builds the
+  `venv/` that the scripts expect; set `VENV` to use another.
 - The `oops.Host` API arrived in rms-oops 0.4.0, the minimum version in `pyproject.toml`.
+- The type information is published in two stubs: `host_voyager/__init__.pyi` declares
+  `VoyagerISS` in full, and `host_voyager/oops/__init__.pyi` re-exports it. `stubtest`
+  checks them against the runtime in the check script and in CI, so adding, renaming or
+  re-signing a public member means updating `host_voyager/__init__.pyi` in the same
+  change. The `[tool.mypy] exclude`, the override list in `pyproject.toml` and
+  `.stubtest-allowlist` keep it off the stub-less modules. The two `type: ignore[override]`
+  comments are real mismatches with `oops.Host`: `from_file` names its first parameter
+  `fileinfo`, and `from_index` returns `list[Snapshot]`.
 - `docs/conf.py` resolves the short class names in docstrings (`FCPath`, `Observation`,
   ...) through intersphinx with `_SHORT_NAMES`. Add a name there when a nitpicky build
   reports a class from another RMS package.
@@ -109,8 +116,25 @@ until this repo has the equivalent.
 - `test_files/` holds cut-down copies of real VGISS_6109 products from
   <https://pds-rings.seti.org/holdings/>: the first 30 rows of the raw image and
   supplemental indexes, which include C3450201 and both cameras; the C3450201 RAW and
-  GEOMED labels; and the GEOMED image truncated after its VICAR header. Their `_edited`
-  names carry through the labels' pointers.
+  GEOMED labels; and the RAW and GEOMED images truncated after their VICAR headers. Their
+  `_edited` names carry through the labels' pointers.
+- `from_file()` returns the same Snapshot, `dict` aside, whether it is given a label or
+  its image file. Given a label, it reads the image file the label's `^IMAGE` names for
+  the data and for the VICAR header, so that file must exist even with `astrometry=True`,
+  and `filepath`, `basename`, `abspath` and `image_url` name it, never the label. The
+  header supplies `if_scale`, the I/F factor of a CALIB or GEOMED product ("FOR
+  (I/F)*10000., MULTIPLY DN VALUE BY x", which FICOR77 writes as `LABEL3`, divided by
+  10000), which no label keyword gives: the label's `REFLECTANCE_SCALING_FACTOR` is 3.345
+  times larger for Voyager 1 images of Saturn. `spacecraft` (1 or 2) comes from the
+  metadata on every path. Consumers read these subfields, never `LAB02` or `LABEL3` in
+  `dict`, which only the VICAR path has.
+- A LAB03 line pads the filter name and writes `CH4/JS` and `CH4/U`; `_filter_name()`
+  respells it as the label does (`CLEAR`, `CH4_JS`) on every path.
+- pdsparser's default "fast" method rejects some valid VGISS labels, such as
+  `C2673426_GEOMED.LBL` of VGISS_7205, whose quoted `NOTE` value starts on the line after
+  the keyword; `from_file()` then parses the label again with "loose". The generic
+  `oops.Host.from_file()` parses the label itself before it reaches the host, so it still
+  fails on those labels; that fix belongs in rms-oops or pdsparser.
 - Labels name the spacecraft in `INSTRUMENT_HOST_NAME` ("VOYAGER 1") and the camera in
   `INSTRUMENT_ID` (`ISSN`/`ISSW`). `IMAGE_TIME` and `STOP_TIME` are the shutter close, and
   `EXPOSURE_DURATION` is in seconds in a label but milliseconds in the VICAR header. The

@@ -18,7 +18,7 @@ def test_unknown_attribute_raises() -> None:
 
     with pytest.raises(AttributeError,
                        match="module 'host_voyager' has no attribute 'NoSuchHost'"):
-        _ = host_voyager.NoSuchHost
+        _ = host_voyager.NoSuchHost  # type: ignore[attr-defined]  # absent by design
 
 
 def test_import_does_not_import_oops() -> None:

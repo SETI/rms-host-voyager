@@ -14,9 +14,13 @@ jobs:
   lint:
     name: Lint rms-host-voyager
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v7
@@ -55,6 +59,13 @@ jobs:
         run: |
           pyroma .
 
+      # The two published stubs, the __init__.pyi of host_voyager and of host_voyager.oops,
+      # must keep describing the runtime API. The allowlist accepts only the deliberate
+      # absence of a stub for the internal _voyager and iss modules.
+      - name: Stubtest
+        run: |
+          python -m mypy.stubtest host_voyager --mypy-config-file pyproject.toml --allowlist .stubtest-allowlist
+
       # -W makes warnings errors and -n (nitpicky) makes a cross-reference with no
       # target one of them.
       - name: Sphinx
@@ -84,6 +95,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v7

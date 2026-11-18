@@ -24,6 +24,7 @@
 #   --mypy                 Run mypy only
 #   --pytest               Run pytest only
 #   --pyroma               Run pyroma only
+#   --stubtest             Run stubtest only (checks the two __init__.pyi stubs)
 #   --bandit               Run bandit only
 #   --vulture              Run vulture only
 #   --pip-audit            Run pip-audit only
@@ -43,7 +44,7 @@
 #
 #   RUN_* (set by this script from CLI or full-run defaults): RUN_RUFF_CHECK,
 #   RUN_RUFF_FORMAT, RUN_FLAKE8_CONT, RUN_MYPY, RUN_PYTEST, RUN_PYROMA,
-#   RUN_BANDIT, RUN_VULTURE, RUN_PIP_AUDIT, RUN_SPHINX,
+#   RUN_STUBTEST, RUN_BANDIT, RUN_VULTURE, RUN_PIP_AUDIT, RUN_SPHINX,
 #   RUN_CODESPELL, RUN_PYMARKDOWN
 #
 #   Per-check toggles (true/false). The defaults match the checks in the
@@ -56,6 +57,7 @@
 #     ENABLE_MYPY         mypy on tests/ only (default: true)
 #     ENABLE_PYTEST       (default: true)
 #     ENABLE_PYROMA       (default: true)
+#     ENABLE_STUBTEST     the two .pyi stubs match the runtime API (default: true)
 #     ENABLE_BANDIT       (default: false)
 #     ENABLE_VULTURE      (default: false)
 #     ENABLE_PIP_AUDIT    (default: true)
@@ -65,7 +67,7 @@
 #
 # Checks (each run separately; -d runs Sphinx and the text checks):
 #   Code:     optional: ruff check, ruff format --check, flake8 continuation-line
-#             indent, mypy, pytest, pyroma, bandit, vulture, pip-audit
+#             indent, mypy, pytest, pyroma, stubtest, bandit, vulture, pip-audit
 #             (see ENABLE_* above). Ruff implements no E12x/E13x rule, so the
 #             continuation-line indent checks come from flake8 instead.
 #   Sphinx:   make -C docs html SPHINXOPTS="-W -n"
@@ -96,6 +98,7 @@ RUN_FLAKE8_CONT=false
 RUN_MYPY=false
 RUN_PYTEST=false
 RUN_PYROMA=false
+RUN_STUBTEST=false
 RUN_BANDIT=false
 RUN_VULTURE=false
 RUN_PIP_AUDIT=false
@@ -112,6 +115,7 @@ SCOPE_SPECIFIED=false
 : "${ENABLE_MYPY:=true}"
 : "${ENABLE_PYTEST:=true}"
 : "${ENABLE_PYROMA:=true}"
+: "${ENABLE_STUBTEST:=true}"
 : "${ENABLE_BANDIT:=false}"
 : "${ENABLE_VULTURE:=false}"
 : "${ENABLE_PIP_AUDIT:=true}"
@@ -243,6 +247,7 @@ while [[ $# -gt 0 ]]; do
             RUN_MYPY=true
             RUN_PYTEST=true
             RUN_PYROMA=true
+            RUN_STUBTEST=true
             RUN_BANDIT=true
             RUN_VULTURE=true
             RUN_PIP_AUDIT=true
@@ -289,6 +294,11 @@ while [[ $# -gt 0 ]]; do
             ;;
         --pyroma)
             RUN_PYROMA=true
+            SCOPE_SPECIFIED=true
+            shift
+            ;;
+        --stubtest)
+            RUN_STUBTEST=true
             SCOPE_SPECIFIED=true
             shift
             ;;
@@ -342,6 +352,7 @@ if [ "$SCOPE_SPECIFIED" = false ]; then
     RUN_MYPY=true
     RUN_PYTEST=true
     RUN_PYROMA=true
+    RUN_STUBTEST=true
     RUN_BANDIT=true
     RUN_VULTURE=true
     RUN_PIP_AUDIT=true
@@ -371,13 +382,14 @@ _code_checks_any_scheduled() {
     [ "$RUN_MYPY" = true ] && [ "$ENABLE_MYPY" = true ] && return 0
     [ "$RUN_PYTEST" = true ] && [ "$ENABLE_PYTEST" = true ] && return 0
     [ "$RUN_PYROMA" = true ] && [ "$ENABLE_PYROMA" = true ] && return 0
+    [ "$RUN_STUBTEST" = true ] && [ "$ENABLE_STUBTEST" = true ] && return 0
     [ "$RUN_BANDIT" = true ] && [ "$ENABLE_BANDIT" = true ] && return 0
     [ "$RUN_VULTURE" = true ] && [ "$ENABLE_VULTURE" = true ] && return 0
     [ "$RUN_PIP_AUDIT" = true ] && [ "$ENABLE_PIP_AUDIT" = true ] && return 0
     return 1
 }
 
-# ---- Code checks (ruff, mypy, pytest, pyroma, bandit, vulture, pip-audit) ----
+# ---- Code checks (ruff, mypy, pytest, pyroma, stubtest, bandit, vulture, pip-audit) ----
 run_code_checks() {
     local output_file="${1:-}"
     local status_file="${2:-}"
@@ -476,6 +488,17 @@ run_code_checks() {
             print_error "Pyroma failed"
             failed=true
             failed_checks="${failed_checks}Code - Pyroma"$'\n'
+        fi
+    fi
+
+    if [ "$RUN_STUBTEST" = true ] && [ "$ENABLE_STUBTEST" = true ]; then
+        print_info "Running stubtest (the two __init__.pyi stubs vs the runtime API)..."
+        if python -m mypy.stubtest host_voyager --mypy-config-file pyproject.toml --allowlist .stubtest-allowlist; then
+            print_success "Stubtest passed"
+        else
+            print_error "Stubtest failed"
+            failed=true
+            failed_checks="${failed_checks}Code - Stubtest"$'\n'
         fi
     fi
 

@@ -91,7 +91,9 @@ filterwarnings = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-host_voyager = ["py.typed"]
+# PEP 561 marker and type stubs must be shipped in the wheel, or downstream type
+# checkers ignore them.
+host_voyager = ["py.typed", "*.pyi", "oops/*.pyi"]
 
 [tool.setuptools_scm]
 local_scheme = "no-local-version"
@@ -116,12 +118,21 @@ fail_under = 65
 
 [tool.mypy]
 strict = true
+# stubtest discovers every module under the package and would compare each unannotated
+# .py module against itself. Only the two __init__.pyi stubs carry type information, so
+# every other module is excluded from discovery; the override below keeps mypy from
+# following an import into one of them.
+exclude = [
+  'host_voyager/oops/(_voyager|iss)\.py$',
+]
 
-# src is deliberately unannotated (see .claude/rules/python.md), so mypy checks only the
-# tests and treats everything imported from host_voyager as Any.
+# src is deliberately unannotated (see .claude/rules/python.md). The published type
+# information lives in the stubs of host_voyager and host_voyager.oops; every other module
+# has no stub, so mypy treats what the tests import from it as Any.
 [[tool.mypy.overrides]]
-module = ["host_voyager", "host_voyager.*"]
+module = ["host_voyager._version", "host_voyager.oops._voyager", "host_voyager.oops.iss"]
 follow_imports = "skip"
+ignore_errors = true
 
 [[tool.mypy.overrides]]
 module = ["cspyce", "cspyce.*", "julian", "julian.*"]
