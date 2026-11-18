@@ -22,7 +22,9 @@ and build requirements without repeating them.
 - Use **Sphinx** for all project documentation, hosted on **ReadTheDocs**.
 - Author narrative pages in **reStructuredText** (`.rst`). Markdown (`.md`) is
   permitted only for files that must also render on the code host (the
-  `README`, `CONTRIBUTING`), included into Sphinx via **MyST** (`myst-parser`).
+  `README`, `CONTRIBUTING`, `CODE_OF_CONDUCT`), included into Sphinx via
+  **MyST** (`myst-parser`). A page under `docs/` whose only job is to include
+  one of those files with a MyST `{include}` directive may itself be Markdown.
 - Keep all documentation source under a single `docs/` directory with one
   `conf.py`. Build outputs (`docs/_build/`) are never committed.
 - After ANY code or documentation change, rebuild the full tree and fix every
