@@ -13,6 +13,7 @@ from typing import Any
 import julian
 import numpy as np
 import oops
+import pdsparser
 import pytest
 import vicar
 from conftest import (CLOCK_COUNT, GEOMED_LABEL, GEOMED_VICAR, INDEX, INDEX_ROWS,
@@ -488,6 +489,20 @@ def test_vicar_target_underscores_and_wide_angle() -> None:
     assert dict_['INSTRUMENT_ID'] == 'ISSW'
 
 
+@pytest.mark.parametrize(('filter_text', 'filter_name'), [
+    ('CLEAR ', 'CLEAR'),
+    ('UV    ', 'UV'),
+    ('CH4/JS', 'CH4_JS'),
+    ('CH4/U ', 'CH4_U'),
+], ids=['padded', 'short', 'slash', 'slash-padded'])
+def test_vicar_filter_is_spelled_as_the_label_spells_it(filter_text: str,
+                                                        filter_name: str) -> None:
+    lab03 = _LAB03.replace('(VIOLET)', f'({filter_text})')
+    dict_ = VoyagerISS._vicar_to_pds3(_vicar_header(LAB02=_LAB02, LAB03=lab03,
+                                                    LAB05=_LAB05))
+    assert dict_['FILTER_NAME'] == filter_name
+
+
 @pytest.mark.parametrize('keywords', [{'LAB02': _LAB02}, {'LAB03': _LAB03}],
                          ids=['no-lab03', 'no-lab02'])
 def test_vicar_without_voyager_lines(keywords: dict[str, str]) -> None:
@@ -502,8 +517,80 @@ def test_vicar_without_voyager_lines(keywords: dict[str, str]) -> None:
 def test_from_file_raw_label() -> None:
     obs = VoyagerISS.from_file(RAW_LABEL, astrometry=True)
     assert obs.fov.uv_shape.vals.tolist() == [800, 800]
-    assert obs.basename == 'C3450201_RAW_edited.LBL'
     assert not hasattr(obs, 'data')
+
+
+@pytest.mark.parametrize('label', [RAW_LABEL, GEOMED_LABEL], ids=['raw', 'geomed'])
+def test_from_file_label_names_the_image_file(label: pathlib.Path) -> None:
+    obs = VoyagerISS.from_file(label, astrometry=True)
+    image = label.with_suffix('.IMG')
+    assert obs.basename == image.name
+    assert obs.filepath.name == image.name
+    assert obs.abspath == image.resolve()
+    assert obs.image_url.endswith(f'/test_files/{image.name}')
+
+
+def test_from_file_label_needs_the_image_file(tmp_path: pathlib.Path) -> None:
+    label = tmp_path / GEOMED_LABEL.name
+    shutil.copy(GEOMED_LABEL, label)
+    with pytest.raises(FileNotFoundError):
+        VoyagerISS.from_file(label, astrometry=True)
+
+
+def test_from_file_label_finds_the_image_file_in_another_case(
+        tmp_path: pathlib.Path) -> None:
+    label = tmp_path / GEOMED_LABEL.name
+    shutil.copy(GEOMED_LABEL, label)
+    image = tmp_path / GEOMED_VICAR.name.lower()
+    shutil.copy(GEOMED_VICAR, image)
+    assert VoyagerISS.from_file(label, astrometry=True).basename == image.name
+
+
+def test_from_file_label_reports_an_invalid_vicar_header(tmp_path: pathlib.Path) -> None:
+    label = tmp_path / GEOMED_LABEL.name
+    shutil.copy(GEOMED_LABEL, label)
+    (tmp_path / GEOMED_VICAR.name).write_bytes(b'NOT A VICAR HEADER')
+    with pytest.raises(oops.host.VicarHostError):
+        VoyagerISS.from_file(label, astrometry=True)
+
+
+def _label_with_note_on_its_own_line(directory: pathlib.Path) -> pathlib.Path:
+    """A copy of the GEOMED label and image whose NOTE value starts on the line after its
+    keyword, as in C2673426_GEOMED.LBL of VGISS_7205; return the label's path."""
+
+    shutil.copy(GEOMED_VICAR, directory)
+    text = GEOMED_LABEL.read_text().replace(
+        'NOTE                            = "NONE"',
+        'NOTE                            =\n"1 WA HALF OF 6 NA/WA ATMOS DYNAMICS PAIRS '
+        'IMAGING URANUS. EXPS SET FOR HI\nLATS."')
+    label = directory / GEOMED_LABEL.name
+    label.write_text(text)
+    return label
+
+
+def test_from_file_label_the_fast_parser_rejects(tmp_path: pathlib.Path) -> None:
+    label = _label_with_note_on_its_own_line(tmp_path)
+    with pytest.raises(pdsparser.PdsSyntaxError):
+        pdsparser.Pds3Label(label, method='fast')
+    obs = VoyagerISS.from_file(label, astrometry=True)
+    assert obs.dict['NOTE'].startswith('1 WA HALF OF 6 NA/WA ATMOS DYNAMICS PAIRS')
+    assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
+
+
+def test_from_file_label_honors_another_parser_method(tmp_path: pathlib.Path) -> None:
+    label = _label_with_note_on_its_own_line(tmp_path)
+    obs = VoyagerISS.from_file(label, astrometry=True, pds3_options={'method': 'strict'})
+    assert obs.dict['NOTE'].startswith('1 WA HALF OF 6 NA/WA ATMOS DYNAMICS PAIRS')
+
+
+@pytest.mark.parametrize('method', [None, 'strict'], ids=['default', 'strict'])
+def test_from_file_label_reports_an_invalid_label(tmp_path: pathlib.Path,
+                                                  method: str | None) -> None:
+    label = tmp_path / 'X.LBL'
+    label.write_text('PDS_VERSION_ID = PDS3\r\nINSTRUMENT_ID\r\nEND\r\n')
+    options = None if method is None else {'method': method}
+    with pytest.raises(oops.host.PdsHostError):
+        VoyagerISS.from_file(label, astrometry=True, pds3_options=options)
 
 
 def test_from_file_geomed_label() -> None:
@@ -518,21 +605,50 @@ def test_from_file_vicar_header() -> None:
 
 
 def test_from_file_sets_local_paths() -> None:
-    obs = VoyagerISS.from_file(RAW_LABEL, astrometry=True)
-    assert obs.abspath == RAW_LABEL.resolve()
-    assert obs.image_url.endswith('/test_files/C3450201_RAW_edited.LBL')
+    obs = VoyagerISS.from_file(GEOMED_VICAR, astrometry=True)
+    assert obs.abspath == GEOMED_VICAR.resolve()
+    assert obs.image_url.endswith('/test_files/C3450201_GEOMED_edited.IMG')
+
+
+@pytest.mark.parametrize('path', [GEOMED_LABEL, GEOMED_VICAR], ids=['label', 'vicar'])
+def test_from_file_if_scale_from_the_vicar_header(path: pathlib.Path) -> None:
+    obs = VoyagerISS.from_file(path, astrometry=True)
+    assert obs.if_scale == pytest.approx(1.e-4, rel=1.e-12)
+
+
+@pytest.mark.parametrize('path', [RAW_LABEL, RAW_LABEL.with_suffix('.IMG')],
+                         ids=['label', 'vicar'])
+def test_from_file_raw_product_has_no_if_scale(path: pathlib.Path) -> None:
+    obs = VoyagerISS.from_file(path, astrometry=True)
+    assert obs.if_scale is None
+
+
+@pytest.mark.parametrize('path', [RAW_LABEL, GEOMED_LABEL, GEOMED_VICAR],
+                         ids=['raw-label', 'geomed-label', 'geomed-vicar'])
+def test_from_file_spacecraft(path: pathlib.Path) -> None:
+    assert VoyagerISS.from_file(path, astrometry=True).spacecraft == 1
+
+
+@pytest.mark.parametrize('path', [GEOMED_LABEL, GEOMED_VICAR], ids=['label', 'vicar'])
+def test_from_file_filter_is_a_plain_string(path: pathlib.Path) -> None:
+    obs = VoyagerISS.from_file(path, astrometry=True)
+    assert type(obs.filter) is str
+    assert obs.filter == 'VIOLET'
 
 
 def test_from_file_reads_pds3_data(tmp_path: pathlib.Path) -> None:
-    image = (np.arange(64, dtype='uint8').reshape(8, 8))
-    (tmp_path / 'C3450201_RAW.IMG').write_bytes(image.tobytes())
-    lines = RAW_LABEL.read_text().replace('C3450201_RAW_edited.IMG', 'C3450201_RAW.IMG')
+    image_path = _write_vicar(tmp_path)
+    lblsize = vicar.VicarLabel.from_file(image_path)['LBLSIZE']
+    assert isinstance(lblsize, int)
+    first_record = lblsize // 8 + 1
+    lines = RAW_LABEL.read_text().replace('C3450201_RAW_edited.IMG', image_path.name)
     lines = lines.replace('RECORD_BYTES                    = 1024', 'RECORD_BYTES = 8')
     lines = lines.replace('FILE_RECORDS                    = 804', 'FILE_RECORDS = 8')
     for pointer in ('VICAR_HEADER', 'ENGINEERING_TABLE', 'VICAR_EXTENSION_HEADER'):
         lines = '\n'.join(line for line in lines.splitlines()
                           if not line.startswith('^' + pointer))
-    lines = lines.replace('("C3450201_RAW.IMG", 4)', '"C3450201_RAW.IMG"')
+    lines = lines.replace(f'("{image_path.name}", 4)',
+                          f'("{image_path.name}", {first_record})')
     lines = lines.replace('LINES                         = 800', 'LINES = 8')
     lines = lines.replace('LINE_SAMPLES                  = 800', 'LINE_SAMPLES = 8')
     lines = lines.replace('LINE_PREFIX_BYTES             = 224', 'LINE_PREFIX_BYTES = 0')
@@ -540,7 +656,8 @@ def test_from_file_reads_pds3_data(tmp_path: pathlib.Path) -> None:
     label.write_text(_strip_objects(lines, ('VICAR_HEADER', 'ENGINEERING_TABLE',
                                             'VICAR_EXTENSION_HEADER')))
     obs = VoyagerISS.from_file(label)
-    assert obs.data.tolist() == image.tolist()
+    assert obs.data.tolist() == np.arange(64).reshape(8, 8).tolist()
+    assert obs.basename == image_path.name
 
 
 def _strip_objects(text: str, names: tuple[str, ...]) -> str:
@@ -635,6 +752,14 @@ def test_from_index_filepath() -> None:
     obs = VoyagerISS.from_index(INDEX)[9]
     assert obs.filepath == 'VGISS_6109/DATA/C34502XX/C3450201_RAW.LBL'
     assert obs.basename == 'C3450201_RAW.LBL'
+
+
+def test_from_index_consumer_subfields() -> None:
+    obs = VoyagerISS.from_index(INDEX)[9]
+    assert obs.spacecraft == 1
+    assert obs.if_scale is None
+    assert type(obs.filter) is str
+    assert obs.filter == 'VIOLET'
 
 
 def test_from_index_raw_fov() -> None:

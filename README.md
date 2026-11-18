@@ -78,6 +78,12 @@ snapshots = VoyagerISS.from_index('VGISS_6109_raw_image_index.lbl')
 - `VoyagerISS.from_file()` makes a `Snapshot` from a RAW, CLEANED, CALIB or GEOMED image.
   A GEOMED image has a 1000x1000 field of view free of the camera's distortion, and every
   other product an 800x800 one. `astrometry=True` reads no image data.
+- Given the PDS3 label or the image file, `from_file()` returns the same `Snapshot`. Given
+  the label, it also reads the image file the label points to, which must exist, and the
+  file names in the `Snapshot` are those of the image file.
+- Each `Snapshot` gives the spacecraft number as `spacecraft`, the filter as the PDS3
+  label spells it as `filter`, and, for a CALIB or GEOMED image, the factor that converts
+  its data to I/F as `if_scale`; that is None for a RAW or CLEANED image.
 - `VoyagerISS.from_index()` makes one `Snapshot` for each row of a raw image index,
   merging in the columns of the supplemental index. The volume index, which lists every
   product, is not accepted.

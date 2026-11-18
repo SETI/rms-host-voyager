@@ -11,7 +11,7 @@ import numpy as np
 
 from filecache import FCPath
 from pdsparser import Pds3Label
-from vicar     import VicarImage
+from vicar     import VicarError, VicarImage, VicarLabel
 
 import oops
 from ._voyager import _Voyager
@@ -93,6 +93,28 @@ _LAB03 = re.compile(r'(?P<camera>[NW])A CAMERA\s+EXP\s+(?P<exp>[\d.]+)\s+MSEC'
 # The target name occupies these columns of LAB05, with underscores for blanks
 _LAB05_TARGET = slice(31, 43)
 
+# The line of a calibrated product's VICAR header that gives its I/F scale, as in
+#   LABEL3='FOR (I/F)*10000., MULTIPLY DN VALUE BY               1.00000'
+_IF_LINE = re.compile(r'FOR \(I/F\)\*10000\., MULTIPLY DN VALUE BY\s+(?P<scale>\S+)')
+_IF_LINE_UNITS = 10000.
+
+
+def _filter_name(text):
+    """A filter name as a PDS3 label spells it.
+
+    The LAB03 line of a VICAR header pads the name with blanks and writes "CH4/JS" and
+    "CH4/U" for the label's "CH4_JS" and "CH4_U"; an index gives each name as a NumPy
+    string.
+
+    Parameters:
+        text (str): The name as a label, an index row or a LAB03 line gives it.
+
+    Returns:
+        str: The name, such as "CLEAR" or "CH4_JS".
+    """
+
+    return str(text).strip().replace('/', '_')
+
 
 class _UnusableImageError(oops.host.HostError):
     """An image whose time or pointing is unavailable.
@@ -129,11 +151,15 @@ class VoyagerISS(oops.Host):
             fileinfo (str | pathlib.Path | FCPath | Pds3Label | VicarLabel | VicarImage):
                 The path to the PDS3 label or the VICAR image file, or its parsed content
                 as a Pds3Label, VicarLabel, or VicarImage. The metadata of a VICAR file
-                are read from its own header; no PDS3 label is needed.
+                are read from its own header; no PDS3 label is needed. A PDS3 label's
+                metadata are read from the label, and its image file, which must exist,
+                supplies the VICAR header and the data.
             return_all_planets (bool, optional): Include kernels for all planets, not just
                 the planet of the encounter.
             pds3_options (dict[str, Any], optional): Any keyword arguments and their
-                values to be passed to the :class:`~pdsparser.Pds3Label` parser.
+                values to be passed to the :class:`~pdsparser.Pds3Label` parser. If the
+                default method, "fast", cannot parse a label, the label is parsed again
+                with the method "loose", which reads every valid label.
             astrometry (bool, optional): True to specify that the returned Observation
                 will only be used for timing and astrometry. In this case, no data array
                 is read and returned in the Observation.
@@ -178,13 +204,28 @@ class VoyagerISS(oops.Host):
 
         Returns:
             Snapshot: The observation, with subfields `dict`, `host`, `instrument`,
-            `detector`, `filter`, `planet`, `label_target`, `spice_kernels`, `filepath`,
-            `basename`, `spice_to_frame`, `spice_frame_name`, `spice_frame_id`, `abspath`
-            and `image_url` inserted, and
-            `data` unless `astrometry` is True. `dict` is the PDS3 label, or the VICAR
-            header with its values also given under their PDS3 keyword names. A
-            geometrically corrected image has a 1000x1000 FOV and every other product an
-            800x800 one.
+            `detector`, `filter`, `planet`, `label_target`, `spacecraft`, `if_scale`,
+            `spice_kernels`, `filepath`, `basename`, `spice_to_frame`,
+            `spice_frame_name`, `spice_frame_id`, `abspath` and `image_url` inserted, and
+            `data` unless `astrometry` is True. Every subfield but `dict` is the same
+            whether a PDS3 label or its image file is given:
+
+            - `dict` is the PDS3 label, or the VICAR header with its values also given
+              under their PDS3 keyword names.
+            - `filter` is the FILTER_NAME as a PDS3 label spells it, such as "CLEAR" or
+              "CH4_JS".
+            - `spacecraft` is the spacecraft number, 1 or 2.
+            - `if_scale` is the factor that converts the data of a calibrated product
+              (CALIB or GEOMED) to I/F, from the line "FOR (I/F)*10000., MULTIPLY DN
+              VALUE BY x" of its VICAR header, so x / 10000; None for a product whose
+              header has no such line (RAW or CLEANED). The PDS3 label's
+              REFLECTANCE_SCALING_FACTOR is not always the same: for Voyager 1 images of
+              Saturn it is 3.345 times larger.
+            - `filepath`, `basename`, `abspath` and `image_url` name the image file,
+              even when the PDS3 label is given.
+
+            A geometrically corrected image has a 1000x1000 FOV and every other product
+            an 800x800 one.
 
         Raises:
             oops.host.HostError: If `frame` is not given and the C kernels hold no record
@@ -194,28 +235,34 @@ class VoyagerISS(oops.Host):
             oops.host.PdsHostError: If the PDS3 label cannot be parsed.
             oops.host.VicarHostError: If the VICAR header cannot be parsed.
             oops.host.WrongHostError: If the file is not a Voyager ISS image.
-            OSError: If the file cannot be read.
+            OSError: If the file, or the image file a PDS3 label points to, cannot be
+                read.
         """
 
         VoyagerISS.initialize()     # define everything the first time through
 
         pds3_options = oops.Host._pds3_options_with_defaults(pds3_options)
-        fileinfo = VoyagerISS._read_fileinfo(fileinfo, formats='PV',
-                                             astrometry=astrometry,
-                                             pds3_options=pds3_options)
+        fileinfo = VoyagerISS._parse_fileinfo(fileinfo, astrometry=astrometry,
+                                              pds3_options=pds3_options)
 
-        # Read the data if necessary; harmonize the label content
+        # Read the data if necessary; harmonize the label content. Given a PDS3 label,
+        # the image file it points to is the observation's file, and its VICAR header
+        # supplies what the label does not give.
         data = None
         if isinstance(fileinfo, Pds3Label):
+            filepath = VoyagerISS._image_path(fileinfo)
+            header = VoyagerISS._read_vicar_header(filepath)
             if not astrometry:
                 data = oops.host.read_pds3_image_array(fileinfo)
             dict_ = fileinfo.as_dict()
         else:
+            filepath = FCPath(fileinfo.filepath)
             if not astrometry:
                 if not isinstance(fileinfo, VicarImage):
                     # A VicarLabel has no array; read the file
                     fileinfo = VicarImage(fileinfo.filepath, strict=False)
                 data = fileinfo.data_2d
+            header = fileinfo
             dict_ = VoyagerISS._vicar_to_pds3(fileinfo)
 
         overrides = {
@@ -232,9 +279,103 @@ class VoyagerISS(oops.Host):
             'parallel'    : parallel,
         }
 
-        return VoyagerISS._make_snapshot(dict_, filepath=FCPath(fileinfo.filepath),
-                                         data=data, return_all_planets=return_all_planets,
+        return VoyagerISS._make_snapshot(dict_, filepath=filepath, data=data,
+                                         if_scale=VoyagerISS._if_scale(header),
+                                         return_all_planets=return_all_planets,
                                          overrides=overrides)
+
+    @staticmethod
+    def _parse_fileinfo(fileinfo, *, astrometry, pds3_options):
+        """The parsed PDS3 label or VICAR header of a Voyager ISS image.
+
+        Parameters:
+            fileinfo (str | pathlib.Path | FCPath | Pds3Label | VicarLabel | VicarImage):
+                The path to the PDS3 label or the VICAR image file, or its parsed content.
+            astrometry (bool): True to read only the header of a VICAR file.
+            pds3_options (dict[str, Any]): The options for the PDS3 label parser,
+                including its method.
+
+        Returns:
+            Pds3Label | VicarLabel | VicarImage: The parsed content.
+
+        Raises:
+            oops.host.PdsHostError: If the PDS3 label cannot be parsed.
+            oops.host.VicarHostError: If the VICAR header cannot be parsed.
+            oops.host.WrongHostError: If the file is not a Voyager ISS image.
+            OSError: If the file cannot be read.
+        """
+
+        try:
+            return VoyagerISS._read_fileinfo(fileinfo, formats='PV',
+                                             astrometry=astrometry,
+                                             pds3_options=pds3_options)
+        except oops.host.PdsHostError:
+            if pds3_options['method'] != 'fast':
+                raise
+
+        # The fast parser rejects some valid labels, such as C2673426_GEOMED.LBL of
+        # VGISS_7205, in which the quoted value of NOTE starts on the next line
+        return VoyagerISS._read_fileinfo(fileinfo, formats='PV', astrometry=astrometry,
+                                         pds3_options=pds3_options | {'method': 'loose'})
+
+    @staticmethod
+    def _image_path(label):
+        """The image file that a PDS3 label describes.
+
+        Parameters:
+            label (Pds3Label): The parsed label.
+
+        Returns:
+            FCPath: The file named by the label's IMAGE pointer, in the directory of the
+            label. If no file of that name exists, the same name in upper or lower case
+            is used if it exists, as when the image array is read.
+        """
+
+        name = label['^IMAGE']
+        parent = FCPath(label.filepath).parent
+        for option in dict.fromkeys((name, name.upper(), name.lower())):
+            if (parent / option).is_file():
+                return parent / option
+        return parent / name
+
+    @staticmethod
+    def _read_vicar_header(filepath):
+        """The VICAR header of an image file.
+
+        Parameters:
+            filepath (FCPath): The path to the image file.
+
+        Returns:
+            VicarLabel: The header.
+
+        Raises:
+            oops.host.VicarHostError: If the header cannot be parsed.
+            OSError: If the file cannot be read.
+        """
+
+        try:
+            return VicarLabel(filepath, strict=False)
+        except VicarError as err:
+            raise oops.host.VicarHostError(str(err)) from err
+
+    @staticmethod
+    def _if_scale(header):
+        """The factor that converts a calibrated product's data to I/F.
+
+        Parameters:
+            header (VicarLabel | VicarImage): The VICAR header of the image.
+
+        Returns:
+            float | None: The factor from the header line "FOR (I/F)*10000., MULTIPLY DN
+            VALUE BY x", which FICOR77 writes as LABEL3, so x / 10000; None if the
+            header has no such line.
+        """
+
+        for value in header.as_dict().values():
+            match = _IF_LINE.search(value) if isinstance(value, str) else None
+            if match:
+                return float(match['scale']) / _IF_LINE_UNITS
+        return None
 
     @staticmethod
     def from_index(filepath, *, supplement=None, row_dicts=None, pds3_options=None,
@@ -311,10 +452,12 @@ class VoyagerISS(oops.Host):
         Returns:
             list[Snapshot]: One raw 800x800 observation per row of the index, each with
             subfields `dict`, `host`, `instrument`, `detector`, `filter`, `planet`,
-            `label_target`, `spice_kernels`, `filepath`, `basename`, `spice_to_frame`,
-            `spice_frame_name` and `spice_frame_id` inserted. `dict` is the row, merged
-            with its row of the supplement, and `filepath` is the VOLUME_NAME and
-            FILE_SPECIFICATION_NAME joined by a slash. A row is left out if it gives
+            `label_target`, `spacecraft`, `if_scale`, `spice_kernels`, `filepath`,
+            `basename`, `spice_to_frame`, `spice_frame_name` and `spice_frame_id`
+            inserted, as described for :meth:`from_file`. `dict` is the row, merged with
+            its row of the supplement; `if_scale` is None, because a raw image has none;
+            and `filepath` is the VOLUME_NAME and FILE_SPECIFICATION_NAME joined by a
+            slash. A row is left out if it gives
             neither STOP_TIME nor IMAGE_TIME, or if `frame` is not given and the C kernels
             hold no record for the image's spacecraft clock stop count.
 
@@ -436,8 +579,8 @@ class VoyagerISS(oops.Host):
         return merged
 
     @staticmethod
-    def _make_snapshot(dict_, filepath, data=None, *, return_all_planets=False,
-                       overrides):
+    def _make_snapshot(dict_, filepath, data=None, *, if_scale=None,
+                       return_all_planets=False, overrides):
         """A Snapshot built from a PDS3 label or a row of an index.
 
         Parameters:
@@ -446,6 +589,8 @@ class VoyagerISS(oops.Host):
                 VOLUME_NAME and FILE_SPECIFICATION_NAME joined by a slash.
             data (numpy.ndarray, optional): The image array; None to omit the `data`
                 subfield.
+            if_scale (float, optional): The factor that converts the data to I/F; None
+                if the product has none.
             return_all_planets (bool, optional): Include kernels for all planets, not just
                 the planet of the encounter.
             overrides (dict[str, Any]): The values of the standard overrides, `target`,
@@ -507,9 +652,11 @@ class VoyagerISS(oops.Host):
         obs.insert_subfield('host', 'Voyager')
         obs.insert_subfield('instrument', 'ISS')
         obs.insert_subfield('detector', camera)
-        obs.insert_subfield('filter', dict_['FILTER_NAME'])
+        obs.insert_subfield('filter', _filter_name(dict_['FILTER_NAME']))
         obs.insert_subfield('planet', planet)
         obs.insert_subfield('label_target', label_target)
+        obs.insert_subfield('spacecraft', vgr)
+        obs.insert_subfield('if_scale', if_scale)
 
         # With a custom frame, pointing never came from a CK, so any CK that happens to be
         # furnished is unrelated to this observation and must not be reported as used.
@@ -664,7 +811,7 @@ class VoyagerISS(oops.Host):
         dict_['IMAGE_TIME'] = scet
         dict_['STOP_TIME'] = scet
         dict_['EXPOSURE_DURATION'] = float(lab03['exp']) / 1000.
-        dict_['FILTER_NAME'] = lab03['filter']
+        dict_['FILTER_NAME'] = _filter_name(lab03['filter'])
         dict_['FILTER_NUMBER'] = int(lab03['filter_number'])
         dict_['TARGET_NAME'] = target
         tstop = julian.tdb_from_tai(julian.tai_from_iso(scet))
