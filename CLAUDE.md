@@ -126,7 +126,8 @@ apply here to the stubs described below.
   the data and for the VICAR header, so that file must exist even with `astrometry=True`,
   and `filepath`, `basename`, `abspath` and `image_url` name it, never the label. The data
   are read where the VICAR header places them, not where the label does: the label of
-  C2673426_GEOMED in VGISS_7205 points a record early, into its two-record header. The
+  C2673426_GEOMED in VGISS_7205 points a record early, into its two-record header, and
+  263 of the 8,392 labels of VGISS_7205 and VGISS_7206 disagree with their headers. The
   header supplies `if_scale`, the I/F factor of a CALIB or GEOMED product ("FOR
   (I/F)*10000., MULTIPLY DN VALUE BY x", which FICOR77 writes as `LABEL3`, divided by
   10000), which no label keyword gives: the label's `REFLECTANCE_SCALING_FACTOR` is 3.345

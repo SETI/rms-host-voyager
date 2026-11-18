@@ -127,6 +127,11 @@ SCOPE_SPECIFIED=false
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VENV="${VENV:-${VENV_PATH:-$PROJECT_ROOT/venv}}"
+# The checks run from the project root, so a relative VENV names a directory there
+case "$VENV" in
+    /* | [A-Za-z]:*) ;;
+    *) VENV="$PROJECT_ROOT/$VENV" ;;
+esac
 
 # The activate script of $VENV: in bin/, or in Scripts/ for a native Windows Python
 venv_activate_path() {
