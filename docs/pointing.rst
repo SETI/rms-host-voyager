@@ -93,13 +93,17 @@ What the host does
   J2000, built from the image's own record, which is found by its clock stop count with
   a tolerance of 20 ticks (1.2 s). The record is never found by the time.
 * A label and a VICAR header do not give the clock partition. The host uses the
-  partition in which the count falls nearest ``STOP_TIME``. A VICAR header gives no
-  count either; the host derives it from the image number.
+  partition in which the count falls nearest ``STOP_TIME``. A VICAR header gives the
+  count as the image number in its ``LAB02`` line, which the host spells as a label does.
+  Where the label and the header give different counts, the label's is used: the
+  header's is wrong for some images, whose C-kernel records are found only by the
+  label's count.
 * :meth:`~host_voyager.oops.iss.VoyagerISS.from_file` raises
-  :exc:`oops.host.HostError` for an image with no time or, unless the `frame`
-  override is given, no record. :meth:`~host_voyager.oops.iss.VoyagerISS.from_index`
-  leaves such an image out. Of the 76,652 VGISS raw images, 17 have no time and 2,137
-  have no record, 1,090 of them in VGISS_8210.
+  :exc:`oops.host.HostFormatError` for an image with no time, and
+  :exc:`oops.host.HostError` for an image with no record unless the `frame` override is
+  given. :meth:`~host_voyager.oops.iss.VoyagerISS.from_index` leaves such an image out.
+  Of the 76,652 VGISS raw images, the labels give no time for 17, and 2,137 have no
+  record, 1,090 of them in VGISS_8210.
 
 Because the frame is a fixed matrix, the `navigation` and `tracker` overrides work as
 usual, but a time shift of the frame, the letter "F" in the `timeshift` override, has no

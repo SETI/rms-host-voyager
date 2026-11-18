@@ -91,16 +91,18 @@ apply here to the stubs described below.
   frame is an unregistered `Cmatrix` relative to J2000, from the record found by the clock
   count (`_camera_frame()`, tolerance 20 ticks). Labels and VICAR headers give no clock
   partition; `_Voyager.sclk_ticks()` picks the partition nearest `STOP_TIME`. A VICAR
-  header gives no count; `_clock_count()` derives it from `IMAGE_NUMBER`, which matches
-  for all but five VGISS images. A frame `timeshift` ("F") has no effect on the fixed
-  matrix.
-- An image with no time or (without a `frame` override) no record raises
-  `_UnusableImageError`, a `HostError`, from `from_file()`, and `from_index()` leaves it
-  out. For a missing record its cause is the SPICE exception and its message ends with the
-  SPICE short code, as in `...: SPICE(CKINSUFFDATA)`, which is how SpinDoctor tells
-  missing SPICE data from other failures, as for the hosts that let the SPICE exception
-  through. Across VGISS that is 17 images with no time and 2,137 with no record, 1,090 of them
-  in VGISS_8210.
+  header gives the count as its FDS image number in `LAB02`, which `_header_items()`
+  spells as a label does (`9096:16:001` for FDS `09096.16`); an index row without the
+  supplement gives only `IMAGE_NUMBER`, from which `_clock_count()` derives it. A frame
+  `timeshift` ("F") has no effect on the fixed matrix.
+- An image with no record (without a `frame` override) raises `_UnusableImageError`, a
+  `HostError`, from `from_file()`. Its cause is the SPICE exception and its message ends
+  with the SPICE short code, as in `...: SPICE(CKINSUFFDATA)`, which is how SpinDoctor
+  tells missing SPICE data from other failures. An image for which no source read gives
+  the time, exposure, camera, spacecraft, mission phase or (without a `frame` override)
+  clock count raises `_MissingItemError`, a `HostFormatError` that names the item and the
+  file. `from_index()` leaves either kind out. Across the VGISS labels that is 17 images
+  with no time and 2,137 with no record, 1,090 of them in VGISS_8210.
 - `from_index()` accepts only a `VGISS_xxxx_raw_image_index.lbl`, one row per RAW image,
   never the full `VGISS_xxxx_index.lbl` (one row per label: RAW, CLEANED, CALIB, GEOMED
   and the reseau and tiepoint tables), because OPUS archives only the raw images. The
@@ -112,7 +114,8 @@ apply here to the stubs described below.
   a full index from `oops.Host.from_index()`, and joins the supplement by `VOLUME_NAME`
   and `FILE_SPECIFICATION_NAME` into rows that lack `STOP_TIME`, as that dispatch passes
   them. The supplement adds `START_TIME` and `STOP_TIME` with fractional
-  seconds; the index's `IMAGE_TIME` has whole seconds.
+  seconds; the index's `IMAGE_TIME` has whole seconds. Each Snapshot's `filepath` names
+  the raw image file (`PRODUCT_ID`), never the label in `FILE_SPECIFICATION_NAME`.
 - VGISS indexes name the volume in `VOLUME_NAME`, not `VOLUME_ID`, and the camera in
   `INSTRUMENT_NAME` ("NARROW ANGLE CAMERA" or "WIDE ANGLE CAMERA"). The index label itself
   identifies no host or instrument, so detection relies on `_detect_in_row()`.
@@ -121,36 +124,52 @@ apply here to the stubs described below.
   supplemental indexes, which include C3450201 and both cameras; the C3450201 RAW and
   GEOMED labels; and the RAW and GEOMED images truncated after their VICAR headers. Their
   `_edited` names carry through the labels' pointers.
-- `from_file()` returns the same Snapshot, `dict` aside, whether it is given a label or
-  its image file. Hosts read only what they need (operator, 2026-11-17): an image input
-  never reads the detached label, and a label input with `astrometry=True` reads only the
-  label and needs no image file, as the rms-oops host did; `if_scale`, which only the
-  VICAR header gives, is then None. Otherwise a label input reads the image file the
-  label's `^IMAGE` names for the data and the VICAR header. Either way `filepath`,
-  `basename`, `abspath` and `image_url` name that image file, never the label. The data
-  are read where the VICAR header places them, not where the label does: the label of
-  C2673426_GEOMED in VGISS_7205 points a record early, into its two-record header, and
-  263 of the 8,392 labels of VGISS_7205 and VGISS_7206 disagree with their headers. The
-  header supplies `if_scale`, the I/F factor of a CALIB or GEOMED product ("FOR
-  (I/F)*10000., MULTIPLY DN VALUE BY x", which FICOR77 writes as `LABEL3`, divided by
-  10000), which no label keyword gives: the label's `REFLECTANCE_SCALING_FACTOR` is 3.345
-  times larger for Voyager 1 images of Saturn. `spacecraft` (1 or 2) comes from the
-  label's `INSTRUMENT_HOST_NAME` (or `SPACECRAFT_NAME`) or the header's `LAB02`. Consumers read these subfields, never `LAB02` or `LABEL3` in
-  `dict`, which only the VICAR path has.
+- `from_file()` follows the operator's rules of 2026-11-18, shared by the four host
+  packages: an image input reads only the image file (no `data` with `astrometry=True`);
+  a label input reads the label and, unless `astrometry=True`, the image file its
+  `^IMAGE` names, found case-tolerantly. With `astrometry=True` a label input needs no
+  image file. The metadata come from whatever was read. `_header_items()` converts the
+  VICAR header's `LAB02`, `LAB03` and `LAB05` fields and its tasks to the label's names
+  and forms, leaving out any field filled with asterisks or garbled (an hour of 24 or
+  more, a year outside 77-99, PICNO bytes, FDS 00000.00). `_merge_items()` takes an item
+  from whichever source gives it and applies `_RESOLUTION` where both do: the label wins
+  every item except `EXPOSURE_DURATION`, where the header wins if the label's value is
+  the header's truncated to 0.01 s. The comment above `_RESOLUTION` gives the survey
+  counts and the issues that record each difference for a final decision; keep them in
+  step. A PDS3
+  null (`UNK`, `N/A`, `NULL`, and -99.9999 in the index) counts as missing. A subfield no
+  source gives is absent, never None (`if_scale` included). `dict` is the merged metadata
+  plus every other key of each source (`LAB02`, `LABEL3`, ...); `label_dict` is the label
+  and `header_dict` the header (`as_dict(unique=False)`), each only when read. Consumers
+  read the documented subfields, including `spacecraft_clock_start_count` and
+  `spacecraft_clock_stop_count`, rather than parsing `dict`.
+- `filepath`, `basename`, `abspath` and `image_url` name the image file on every input.
+  They are absent for parsed content with no file path (a `Pds3Label` made from text, a
+  `VicarImage` made from an array), and `abspath` is absent for a remote image file that a
+  label read with `astrometry=True` did not retrieve.
+- The data are read where the VICAR header places them, not where the label does: the
+  label of C2673426_GEOMED in VGISS_7205 points a record early, into its two-record
+  header, and that of C3489611_GEOMED in VGISS_6112 a record late. The header supplies
+  `if_scale`, the I/F factor of a CALIB or GEOMED product ("FOR (I/F)*10000., MULTIPLY DN
+  VALUE BY x", which FICOR77 writes as `LABEL3`, divided by 10000), which no label keyword
+  gives: the label's `REFLECTANCE_SCALING_FACTOR` is 3.345 times larger for Voyager 1
+  images of Saturn.
 - A LAB03 line pads the filter name and writes `CH4/JS` and `CH4/U`; `_filter_name()`
   respells it as the label does (`CLEAR`, `CH4_JS`) on every path.
 - pdsparser's default "fast" method rejects some valid VGISS labels, such as
   `C2673426_GEOMED.LBL` of VGISS_7205, whose quoted `NOTE` value starts on the line after
-  the keyword; `from_file()` then parses the label again with "loose". The generic
+  the keyword; `from_file()` then parses the label again with "strict", then "loose". The
+  generic
   `oops.Host.from_file()` parses the label itself before it reaches the host, so it still
   fails on those labels; that fix belongs in rms-oops or pdsparser.
 - Labels name the spacecraft in `INSTRUMENT_HOST_NAME` ("VOYAGER 1") and the camera in
   `INSTRUMENT_ID` (`ISSN`/`ISSW`). `IMAGE_TIME` and `STOP_TIME` are the shutter close, and
   `EXPOSURE_DURATION` is in seconds in a label but milliseconds in the VICAR header. The
-  index of VGISS_6201 gives the null exposure -99.9999 for one dark frame; the host uses 0.
+  index of VGISS_6201 gives the null exposure -99.9999 for one dark frame, C3940530, whose
+  label gives "UNK" for its exposure and time.
 - The product type decides the FOV: `GEOMETRICALLY_CORRECTED_IMAGE` is 1000x1000 and
   undistorted, every other product 800x800 (raw geometry). A VICAR header has no
-  `PRODUCT_TYPE`; `_vicar_to_pds3()` infers it from the VICAR tasks (`GEOMA` means GEOMED).
+  `PRODUCT_TYPE`; `_header_items()` infers it from the VICAR tasks (`GEOMA` means GEOMED).
 - `_TARGET_NAME_REPAIRS`, `_PLANET_TARGETS` and `_TARGET_STARS` in `iss.py` cover every
   `TARGET_NAME` in the VGISS raw image indexes; the `*999` volumes are cumulative indexes
   that repeat every row, so leave them out of any survey.
