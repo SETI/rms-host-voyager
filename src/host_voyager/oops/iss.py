@@ -153,7 +153,8 @@ class VoyagerISS(oops.Host):
                 as a Pds3Label, VicarLabel, or VicarImage. The metadata of a VICAR file
                 are read from its own header; no PDS3 label is needed. A PDS3 label's
                 metadata are read from the label, and its image file, which must exist,
-                supplies the VICAR header and the data.
+                supplies the VICAR header and the data, which are read where that header
+                places them.
             return_all_planets (bool, optional): Include kernels for all planets, not just
                 the planet of the encounter.
             pds3_options (dict[str, Any], optional): Any keyword arguments and their
@@ -245,25 +246,24 @@ class VoyagerISS(oops.Host):
         fileinfo = VoyagerISS._parse_fileinfo(fileinfo, astrometry=astrometry,
                                               pds3_options=pds3_options)
 
-        # Read the data if necessary; harmonize the label content. Given a PDS3 label,
-        # the image file it points to is the observation's file, and its VICAR header
-        # supplies what the label does not give.
-        data = None
+        # Harmonize the label content. Given a PDS3 label, the image file it points to is
+        # the observation's file, and its VICAR header supplies what the label does not
+        # give.
         if isinstance(fileinfo, Pds3Label):
             filepath = VoyagerISS._image_path(fileinfo)
-            header = VoyagerISS._read_vicar_header(filepath)
-            if not astrometry:
-                data = oops.host.read_pds3_image_array(fileinfo)
             dict_ = fileinfo.as_dict()
+            vic = None
         else:
             filepath = FCPath(fileinfo.filepath)
-            if not astrometry:
-                if not isinstance(fileinfo, VicarImage):
-                    # A VicarLabel has no array; read the file
-                    fileinfo = VicarImage(fileinfo.filepath, strict=False)
-                data = fileinfo.data_2d
-            header = fileinfo
             dict_ = VoyagerISS._vicar_to_pds3(fileinfo)
+            vic = fileinfo
+
+        # Read the data, if needed, where the VICAR header places them, whichever file
+        # was given. The label of C2673426_GEOMED in VGISS_7205 places the image a record
+        # too early, inside the header, which takes two records.
+        if vic is None or not (astrometry or isinstance(vic, VicarImage)):
+            vic = VoyagerISS._read_vicar(filepath, astrometry=astrometry)
+        data = None if astrometry else vic.data_2d
 
         overrides = {
             'target'      : target,
@@ -280,7 +280,7 @@ class VoyagerISS(oops.Host):
         }
 
         return VoyagerISS._make_snapshot(dict_, filepath=filepath, data=data,
-                                         if_scale=VoyagerISS._if_scale(header),
+                                         if_scale=VoyagerISS._if_scale(vic),
                                          return_all_planets=return_all_planets,
                                          overrides=overrides)
 
@@ -339,14 +339,15 @@ class VoyagerISS(oops.Host):
         return parent / name
 
     @staticmethod
-    def _read_vicar_header(filepath):
-        """The VICAR header of an image file.
+    def _read_vicar(filepath, *, astrometry):
+        """The VICAR header of an image file, with its data unless only for astrometry.
 
         Parameters:
             filepath (FCPath): The path to the image file.
+            astrometry (bool): True to read only the header.
 
         Returns:
-            VicarLabel: The header.
+            VicarLabel | VicarImage: The header, or the image with its header.
 
         Raises:
             oops.host.VicarHostError: If the header cannot be parsed.
@@ -354,7 +355,9 @@ class VoyagerISS(oops.Host):
         """
 
         try:
-            return VicarLabel(filepath, strict=False)
+            if astrometry:
+                return VicarLabel(filepath, strict=False)
+            return VicarImage(filepath, strict=False)
         except VicarError as err:
             raise oops.host.VicarHostError(str(err)) from err
 
@@ -617,7 +620,7 @@ class VoyagerISS(oops.Host):
         tstop = VoyagerISS._tstop(dict_)
 
         planet = dict_['MISSION_PHASE_NAME'].split()[0]
-        label_target = dict_['TARGET_NAME']
+        label_target = str(dict_['TARGET_NAME'])
         if label_target in _TARGET_STARS:
             label_lightsource = oops.lightsource.star_lookup(_TARGET_STARS[label_target])
             target = 'NONE'

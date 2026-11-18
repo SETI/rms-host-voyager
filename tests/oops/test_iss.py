@@ -636,11 +636,16 @@ def test_from_file_filter_is_a_plain_string(path: pathlib.Path) -> None:
     assert obs.filter == 'VIOLET'
 
 
-def test_from_file_reads_pds3_data(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize('records_early', [0, 1], ids=['as-labeled', 'label-one-early'])
+def test_from_file_label_reads_the_data_its_header_describes(
+        tmp_path: pathlib.Path, records_early: int) -> None:
+    """The data come from where the VICAR header places them, even if the label's IMAGE
+    pointer is a record early, as in C2673426_GEOMED.LBL of VGISS_7205."""
+
     image_path = _write_vicar(tmp_path)
     lblsize = vicar.VicarLabel.from_file(image_path)['LBLSIZE']
     assert isinstance(lblsize, int)
-    first_record = lblsize // 8 + 1
+    first_record = lblsize // 8 + 1 - records_early
     lines = RAW_LABEL.read_text().replace('C3450201_RAW_edited.IMG', image_path.name)
     lines = lines.replace('RECORD_BYTES                    = 1024', 'RECORD_BYTES = 8')
     lines = lines.replace('FILE_RECORDS                    = 804', 'FILE_RECORDS = 8')
@@ -760,6 +765,7 @@ def test_from_index_consumer_subfields() -> None:
     assert obs.if_scale is None
     assert type(obs.filter) is str
     assert obs.filter == 'VIOLET'
+    assert type(obs.label_target) is str
 
 
 def test_from_index_raw_fov() -> None:
