@@ -3,6 +3,8 @@
 ##########################################################################################
 """Tests for the Voyager ISS host, host_voyager.oops.iss."""
 
+from collections.abc import Iterator
+import itertools
 import json
 import os
 import pathlib
@@ -1653,11 +1655,33 @@ def test_from_file_rejects_other_hosts(tmp_path: pathlib.Path) -> None:
 
 
 def test_from_index_reads_every_row() -> None:
-    assert len(VoyagerISS.from_index(INDEX)) == INDEX_ROWS
+    assert len(list(VoyagerISS.from_index(INDEX))) == INDEX_ROWS
+
+
+def test_from_index_builds_each_row_when_reached(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The result is an iterator that builds each row's Snapshot when it reaches the row
+    and yields the rows in index order."""
+
+    built: list[Any] = []
+    make_snapshot = VoyagerISS._make_snapshot
+
+    def spy(dict_: dict[str, Any], **kwargs: Any) -> Any:
+        built.append(kwargs['filepath'])
+        return make_snapshot(dict_, **kwargs)
+
+    monkeypatch.setattr(VoyagerISS, '_make_snapshot', spy)
+    snapshots = VoyagerISS.from_index(INDEX)
+    assert isinstance(snapshots, Iterator)
+    assert built == []
+    next(snapshots)
+    assert len(built) == 1
+    rest = list(snapshots)
+    assert len(rest) == INDEX_ROWS - 1
+    assert rest[8].basename == 'C3450201_RAW.IMG'
 
 
 def test_from_index_merges_the_supplement() -> None:
-    obs = VoyagerISS.from_index(INDEX)[9]
+    obs = list(VoyagerISS.from_index(INDEX))[9]
     assert obs.dict['STOP_TIME'] == STOP_TIME
     assert obs.dict['SPACECRAFT_CLOCK_PARTITION_NUMBER'] == 2
 
@@ -1665,7 +1689,7 @@ def test_from_index_merges_the_supplement() -> None:
 def test_from_index_names_the_image_file_beside_the_index() -> None:
     """An index outside the holdings layout has its volume directory beside it."""
 
-    obs = VoyagerISS.from_index(INDEX)[9]
+    obs = list(VoyagerISS.from_index(INDEX))[9]
     image = INDEX.parent / 'VGISS_6109/DATA/C34502XX/C3450201_RAW.IMG'
     assert obs.filepath == FCPath(image)
     assert obs.basename == 'C3450201_RAW.IMG'
@@ -1687,7 +1711,7 @@ def _holdings_index(holdings: pathlib.Path) -> pathlib.Path:
 
 def test_from_index_names_the_image_file_in_the_volumes_tree(
         tmp_path: pathlib.Path) -> None:
-    obs = VoyagerISS.from_index(_holdings_index(tmp_path))[9]
+    obs = list(VoyagerISS.from_index(_holdings_index(tmp_path)))[9]
     image = tmp_path / 'volumes/VGISS_6xxx/VGISS_6109/DATA/C34502XX/C3450201_RAW.IMG'
     assert obs.filepath == FCPath(image)
     assert obs.basename == 'C3450201_RAW.IMG'
@@ -1698,7 +1722,7 @@ def test_from_index_remote_image_file_has_a_url_and_no_abspath() -> None:
     index = FCPath('https://pds-rings.seti.org/holdings/metadata/VGISS_6xxx/VGISS_6109/'
                    'VGISS_6109_raw_image_index.lbl')
     rows = VoyagerISS._read_index_rows(INDEX, supplement=SUPPLEMENT)
-    obs = VoyagerISS.from_index(index, row_dicts=rows, supplement=SUPPLEMENT)[9]
+    obs = list(VoyagerISS.from_index(index, row_dicts=rows, supplement=SUPPLEMENT))[9]
     url = ('https://pds-rings.seti.org/holdings/volumes/VGISS_6xxx/VGISS_6109/DATA/'
            'C34502XX/C3450201_RAW.IMG')
     assert obs.image_url == url
@@ -1707,7 +1731,7 @@ def test_from_index_remote_image_file_has_a_url_and_no_abspath() -> None:
 
 
 def test_from_index_consumer_subfields() -> None:
-    obs = VoyagerISS.from_index(INDEX)[9]
+    obs = list(VoyagerISS.from_index(INDEX))[9]
     assert obs.spacecraft == 1
     assert not hasattr(obs, 'if_scale')
     assert obs.spacecraft_clock_stop_count == CLOCK_COUNT
@@ -1728,12 +1752,12 @@ def test_from_index_with_supplement(tmp_path: pathlib.Path) -> None:
     copy = tmp_path / 'raw.lbl'
     shutil.copy(INDEX, copy)
     shutil.copy(INDEX.with_suffix('.tab'), tmp_path)
-    obs = VoyagerISS.from_index(copy, supplement=SUPPLEMENT)
+    obs = list(VoyagerISS.from_index(copy, supplement=SUPPLEMENT))
     assert len(obs) == INDEX_ROWS
 
 
 def test_from_index_finds_the_supplement_for_the_sentinel() -> None:
-    obs = VoyagerISS.from_index(INDEX, supplement=oops.Host.SUPPLEMENT)
+    obs = list(VoyagerISS.from_index(INDEX, supplement=oops.Host.SUPPLEMENT))
     assert obs[9].dict['STOP_TIME'] == STOP_TIME
 
 
@@ -1756,7 +1780,7 @@ def test_from_index_rejects_the_rows_of_a_volume_index(tmp_path: pathlib.Path) -
 
 def test_from_index_merges_the_supplement_into_given_rows() -> None:
     rows = VoyagerISS._read_index_rows(INDEX)[9:11]
-    obs = VoyagerISS.from_index(INDEX, row_dicts=rows)
+    obs = list(VoyagerISS.from_index(INDEX, row_dicts=rows))
     assert [o.dict['STOP_TIME'] for o in obs] == [STOP_TIME, '1980-10-29T06:02:10.00']
 
 
@@ -1781,7 +1805,7 @@ def test_from_index_finds_an_upper_case_supplement(tmp_path: pathlib.Path) -> No
     shutil.copy(INDEX.with_suffix('.tab'), tmp_path)
     shutil.copy(SUPPLEMENT, tmp_path / 'VGISS_6109_SUPPLEMENTAL_INDEX.LBL')
     shutil.copy(SUPPLEMENT.with_suffix('.tab'), tmp_path)
-    assert len(VoyagerISS.from_index(index)) == INDEX_ROWS
+    assert len(list(VoyagerISS.from_index(index))) == INDEX_ROWS
 
 
 def test_from_index_rejects_another_host(tmp_path: pathlib.Path) -> None:
@@ -1807,7 +1831,7 @@ def test_from_index_keeps_images_without_a_record(fake_spice: FakeSpice) -> None
     """The row is kept without checking its pointing; using that pointing raises."""
 
     fake_spice.missing.add(fake_scencd(-31, f'2/{CLOCK_COUNT}'))
-    snapshots = VoyagerISS.from_index(INDEX)
+    snapshots = list(VoyagerISS.from_index(INDEX))
     assert len(snapshots) == INDEX_ROWS
     obs = snapshots[9]
     with pytest.raises(oops.OopsSpiceError) as info:
@@ -1819,14 +1843,14 @@ def test_from_index_keeps_images_without_a_record(fake_spice: FakeSpice) -> None
 
 def test_from_index_keeps_them_with_a_custom_frame(fake_spice: FakeSpice) -> None:
     fake_spice.missing.add(fake_scencd(-31, f'2/{CLOCK_COUNT}'))
-    snapshots = VoyagerISS.from_index(INDEX, frame=oops.Frame.J2000)
+    snapshots = list(VoyagerISS.from_index(INDEX, frame=oops.Frame.J2000))
     assert snapshots[9].frame is oops.Frame.J2000
 
 
 def test_from_index_row_without_a_time_takes_it_from_the_clock() -> None:
     rows = VoyagerISS._read_index_rows(INDEX, supplement=SUPPLEMENT)
     rows[9].update({'STOP_TIME': 'UNK', 'IMAGE_TIME': 'UNK'})
-    obs = VoyagerISS.from_index(INDEX, row_dicts=rows)[9]
+    obs = list(VoyagerISS.from_index(INDEX, row_dicts=rows))[9]
     assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
     assert obs.time_from_sclk is True
 
@@ -1849,30 +1873,34 @@ def _index_with_exposure(directory: pathlib.Path, field: str) -> pathlib.Path:
 # The index labels give the exposure 7 bytes, though its field and its FORMAT, F9.4, have
 # 9, so a table reader that follows the label reads 0.0075 as 0.0
 def test_from_index_reads_every_digit_of_the_exposure(tmp_path: pathlib.Path) -> None:
-    obs = VoyagerISS.from_index(_index_with_exposure(tmp_path, '   0.0075'))[9]
+    obs = list(VoyagerISS.from_index(_index_with_exposure(tmp_path, '   0.0075')))[9]
     assert obs.dict['EXPOSURE_DURATION'] == 0.0075
     assert obs.texp == pytest.approx(0.0075)
 
 
 def test_from_index_dispatch_reads_every_digit_of_the_exposure(
         tmp_path: pathlib.Path) -> None:
-    obs = oops.Host.from_index(_index_with_exposure(tmp_path, '   0.0075'))[9]
+    obs = list(oops.Host.from_index(_index_with_exposure(tmp_path, '   0.0075')))[9]
     assert obs.dict['EXPOSURE_DURATION'] == 0.0075
 
 
 def test_from_index_null_exposure_is_a_format_error(tmp_path: pathlib.Path) -> None:
+    """The row is refused when the iteration reaches it, after the rows before it."""
+
+    snapshots = VoyagerISS.from_index(_index_with_exposure(tmp_path, ' -99.9999'))
+    assert len(list(itertools.islice(snapshots, 9))) == 9
     with pytest.raises(oops.host.HostFormatError,
                        match=r'C34502XX/C3450201_RAW\.IMG has no EXPOSURE_DURATION$'):
-        VoyagerISS.from_index(_index_with_exposure(tmp_path, ' -99.9999'))
+        next(snapshots)
 
 
 def test_from_index_dict_is_json() -> None:
-    obs = VoyagerISS.from_index(INDEX)[9]
+    obs = list(VoyagerISS.from_index(INDEX))[9]
     assert json.loads(json.dumps(obs.dict)) == obs.dict
 
 
 def test_from_index_dict_has_no_masks() -> None:
-    obs = VoyagerISS.from_index(INDEX)[9]
+    obs = list(VoyagerISS.from_index(INDEX))[9]
     assert [key for key in obs.dict if key.endswith('_mask')] == []
 
 
@@ -1886,7 +1914,7 @@ def test_from_index_refuses_no_supplement() -> None:
 
 def test_from_index_given_rows_need_no_supplement() -> None:
     rows = VoyagerISS._read_index_rows(INDEX)
-    obs = VoyagerISS.from_index(INDEX, row_dicts=rows, supplement=None)
+    obs = list(VoyagerISS.from_index(INDEX, row_dicts=rows, supplement=None))
     assert len(obs) == INDEX_ROWS
     assert 'STOP_TIME' not in obs[9].dict
 
@@ -1916,6 +1944,8 @@ def test_from_index_rejects_an_unknown_keyword() -> None:
 
 @pytest.mark.parametrize('select', [0, slice(None), 'data'])
 def test_from_index_refuses_select(select: Any) -> None:
+    """The call itself raises, before any iteration."""
+
     with pytest.raises(oops.OopsValueError,
                        match='each row of a Voyager ISS raw image index is one '
                              'observation'):
@@ -1937,12 +1967,13 @@ def test_from_index_with_an_invalid_parser_option() -> None:
 
 
 def test_from_index_dict_holds_python_numbers() -> None:
-    obs = VoyagerISS.from_index(INDEX)[9]
+    obs = list(VoyagerISS.from_index(INDEX))[9]
     assert type(obs.dict['SPACECRAFT_CLOCK_PARTITION_NUMBER']) is int
 
 
 def test_from_index_filter() -> None:
-    obs = VoyagerISS.from_index(INDEX, filter={'INSTRUMENT_NAME': 'WIDE ANGLE CAMERA'})
+    obs = list(VoyagerISS.from_index(INDEX,
+                                     filter={'INSTRUMENT_NAME': 'WIDE ANGLE CAMERA'}))
     assert {o.detector for o in obs} == {'WAC'}
     assert 0 < len(obs) < INDEX_ROWS
 
@@ -1954,7 +1985,7 @@ def test_from_index_fov_override() -> None:
 
 def test_host_from_index_dispatches_to_iss() -> None:
     # oops.Host.from_index cannot name this supplement, so VoyagerISS merges it
-    obs = oops.Host.from_index(INDEX)[9]
+    obs = list(oops.Host.from_index(INDEX))[9]
     assert obs.instrument == 'ISS'
     assert obs.dict['STOP_TIME'] == STOP_TIME
     assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)

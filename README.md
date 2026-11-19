@@ -80,12 +80,13 @@ The host class can also be used directly, for one image or for every image in a 
 from host_voyager import VoyagerISS
 
 snapshot = VoyagerISS.from_file('VGISS_6109/DATA/C34502XX/C3450201_GEOMED.LBL')
-snapshots = VoyagerISS.from_index('VGISS_6109_raw_image_index.lbl')
+snapshots = list(VoyagerISS.from_index('VGISS_6109_raw_image_index.lbl'))
 ```
 
 Replace each path with the location of the file in your copy of the archive, or with
 its URL. `from_index` also reads the supplemental index beside the index, which must
-exist.
+exist. It returns an iterator, which builds each image's Snapshot when the loop reaches
+it; `list()` builds them all at once.
 
 # Documentation
 

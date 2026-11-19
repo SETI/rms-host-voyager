@@ -38,9 +38,9 @@ apply here to the stubs described below.
   checks them against the runtime in the check script and in CI, so adding, renaming or
   re-signing a public member means updating `host_voyager/__init__.pyi` in the same
   change. The `[tool.mypy] exclude`, the override list in `pyproject.toml` and
-  `.stubtest-allowlist` keep it off the stub-less modules. The two `type: ignore[override]`
-  comments are real mismatches with `oops.Host`: `from_file` names its first parameter
-  `fileinfo`, and `from_index` returns `list[Snapshot]`.
+  `.stubtest-allowlist` keep it off the stub-less modules. The `type: ignore[override]`
+  comment is a real mismatch with `oops.Host`: `from_file` names its first parameter
+  `fileinfo`.
 - `docs/conf.py` resolves the short class names in docstrings (`FCPath`, `Observation`,
   ...) through intersphinx with `_SHORT_NAMES`. Add a name there when a nitpicky build
   reports a class from another RMS package.
@@ -124,7 +124,8 @@ apply here to the stubs described below.
   missing `MISSION_PHASE_NAME` is computed from the time. Across the VGISS labels 2,137
   images have no record, 1,090 of them in VGISS_8210. The index and the label of
   C3940530 (VGISS_6201) give no exposure (only its VICAR header does, 5 ms), so
-  `from_index()` raises for that volume; that is left for the operator.
+  iterating `from_index()` over that volume raises at that row; that is left for the
+  operator.
 - `from_index()` accepts only a `VGISS_xxxx_raw_image_index.lbl`, one row per RAW image,
   never the full `VGISS_xxxx_index.lbl` (one row per label: RAW, CLEANED, CALIB, GEOMED
   and the reseau and tiepoint tables), because OPUS archives only the raw images. The
@@ -154,6 +155,10 @@ apply here to the stubs described below.
   `<holdings>/volumes/VGISS_6xxx/VGISS_6109/`, and an index anywhere else to the
   directory `VOLUME_NAME` beside it. `abspath` is present only for a local image file or
   a remote one already in the cache.
+- `from_index()` returns an iterator. It checks its arguments and reads and filters the
+  tables itself, then returns a generator that builds each row's Snapshot when the
+  iteration reaches it, so only an error in one row waits for that row. It must not be a
+  generator function, which would defer every error to the first `next()`.
 - VGISS indexes name the volume in `VOLUME_NAME`, not `VOLUME_ID`, and the camera in
   `INSTRUMENT_NAME` ("NARROW ANGLE CAMERA" or "WIDE ANGLE CAMERA"). The index label itself
   identifies no host or instrument, so detection relies on `_detect_in_row()`.

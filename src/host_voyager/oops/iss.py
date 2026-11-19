@@ -924,7 +924,10 @@ class VoyagerISS(oops.Host):
                    path=None, frame=None, cadence=None, fov=None, calibrations=None,
                    timeshift=None, navigation=None, tracker=None, parallel=None,
                    **kwargs):
-        """A list of Snapshot objects, one for each row of a Voyager ISS raw image index.
+        """An iterator over Snapshots, one for each row of a Voyager ISS raw image index.
+
+        The arguments are checked, and the index is read and filtered, when this method is
+        called; each row's Snapshot is built when the iteration reaches that row.
 
         Parameters:
             filepath (str | pathlib.Path | FCPath): The path to the PDS label of a VGISS
@@ -955,7 +958,7 @@ class VoyagerISS(oops.Host):
                 their values or a set or tuple of values. If provided, only rows of the
                 index in which each named column equals the value, falls in the set of
                 values, or falls in a range defined by a tuple of two values, will be
-                included in the returned list.
+                included.
             return_all_planets (bool, optional): Include kernels for all planets, not just
                 the planet of the encounter.
             select (None): Must be None. Each row describes a single observation, so
@@ -996,42 +999,44 @@ class VoyagerISS(oops.Host):
             **kwargs: Any other keyword argument raises an error.
 
         Returns:
-            list[Snapshot]: One raw 800x800 observation per row of the index, each with
-            subfields `dict`, `host`, `instrument`, `detector`, `planet`, `spacecraft`,
-            `time_from_sclk`, `spice_kernels`, `filepath`, `basename`, `image_url`,
-            `spice_to_frame`, `spice_frame_name` and `spice_frame_id` inserted, and
-            `filter`, `label_target`, `spacecraft_clock_start_count`,
-            `spacecraft_clock_stop_count` and `abspath` when available, as described
-            for :meth:`from_file`. `dict` is the row, merged with its row of the
-            supplement, without the columns whose values are null (the indexes'
-            EXPOSURE_DURATION of -99.9999 and their "UNK" times, which no real value
-            shares), and with each value a Python str, int, float or bool. The labels
-            of the raw image indexes give the EXPOSURE_DURATION column two bytes fewer
-            than the table holds; the column is read at its full width, so that an
-            exposure of 0.0075 s is not read as 0.0 s. A row without a time gets
-            one from its spacecraft clock stop count, as :meth:`from_file` describes;
-            the supplement gives every row its clock partition. `filepath`, `basename`
-            and `image_url`
-            name the raw image file, PRODUCT_ID, in the directory of the
-            FILE_SPECIFICATION_NAME within the volume VOLUME_NAME, which is found from
-            the location of `filepath`: for an index where the PDS Ring-Moon Systems
-            Node holdings keep it, "<holdings>/metadata/VGISS_6xxx/VGISS_6109/", the
-            volume is "<holdings>/volumes/VGISS_6xxx/VGISS_6109"; for an index anywhere
-            else, it is the directory VOLUME_NAME beside the index. `abspath` is
-            present only if the image file is local or a remote one is already in the
-            local cache. Every row gives a Snapshot. The pointing is
-            not checked: if `frame` is not given and the SPICE kernels cannot supply an
-            image's pointing, evaluating its frame raises :class:`oops.OopsSpiceError`,
-            as :meth:`from_file` describes.
+            collections.abc.Iterator[Snapshot]: One raw 800x800 observation per filtered
+            row of the index, in index order, each with subfields `dict`, `host`,
+            `instrument`, `detector`, `planet`, `spacecraft`, `time_from_sclk`,
+            `spice_kernels`, `filepath`, `basename`, `image_url`, `spice_to_frame`,
+            `spice_frame_name` and `spice_frame_id` inserted, and `filter`,
+            `label_target`, `spacecraft_clock_start_count`, `spacecraft_clock_stop_count`
+            and `abspath` when available, as described for :meth:`from_file`.
+
+            `dict` is the row, merged with its row of the supplement, without the columns
+            whose values are null (the indexes' EXPOSURE_DURATION of -99.9999 and their
+            "UNK" times, which no real value shares), and with each value a Python str,
+            int, float or bool. The labels of the raw image indexes give the
+            EXPOSURE_DURATION column two bytes fewer than the table holds; the column is
+            read at its full width, so that an exposure of 0.0075 s is not read as 0.0 s.
+            A row without a time gets one from its spacecraft clock stop count, as
+            :meth:`from_file` describes; the supplement gives every row its clock
+            partition. `filepath`, `basename` and `image_url` name the raw image file,
+            PRODUCT_ID, in the directory of the FILE_SPECIFICATION_NAME within the volume
+            VOLUME_NAME, which is found from the location of `filepath`: for an index
+            where the PDS Ring-Moon Systems Node holdings keep it,
+            "<holdings>/metadata/VGISS_6xxx/VGISS_6109/", the volume is
+            "<holdings>/volumes/VGISS_6xxx/VGISS_6109"; for an index anywhere else, it is
+            the directory VOLUME_NAME beside the index. `abspath` is present only if the
+            image file is local or a remote one is already in the local cache. Every row
+            gives a Snapshot. The pointing is not checked: if `frame` is not given and
+            the SPICE kernels cannot supply an image's pointing, evaluating its frame
+            raises :class:`oops.OopsSpiceError`, as :meth:`from_file` describes.
 
         Raises:
             oops.OopsSpiceError: If a row gives no time and the clock kernel cannot
-                convert its clock count, as :meth:`from_file` describes.
+                convert its clock count, as :meth:`from_file` describes; raised when the
+                iteration reaches that row.
             oops.OopsTypeError: If a keyword argument is not one of those listed.
             oops.OopsValueError: If `select` is not None.
             oops.host.HostFormatError: If a row gives no exposure, camera or spacecraft;
                 no time and no clock count; or, unless `frame` is given, no spacecraft
                 clock stop count. The message names the missing item and the image file.
+                It is raised when the iteration reaches that row.
             FileNotFoundError: If the supplement does not exist.
             oops.host.HostIndexError: If `supplement` is None while `row_dicts` is not
                 given; if `supplement` is `oops.Host.SUPPLEMENT` and the name of
@@ -1089,19 +1094,21 @@ class VoyagerISS(oops.Host):
             'parallel'    : parallel,
         }
 
-        # Every row gives a Snapshot or raises; an image whose pointing SPICE cannot
-        # supply is kept, and raises only when its frame is evaluated (#16)
-        snapshots = []
-        for row_dict in row_dicts:
-            row_dict = _plain_row(row_dict)
-            image = VoyagerISS._index_image_path(filepath, row_dict)
-            fetched = image.is_local() or pathlib.Path(image.get_local_path()).exists()
-            snapshots.append(VoyagerISS._make_snapshot(
-                _without_nulls(row_dict), filepath=image, fetched=fetched,
-                return_all_planets=return_all_planets, check_pointing=False,
-                overrides=overrides))
+        # Build each row's Snapshot when the iteration reaches it. Every row gives a
+        # Snapshot or raises; an image whose pointing SPICE cannot supply is kept, and
+        # raises only when its frame is evaluated (#16)
+        def snapshots():
+            for row_dict in row_dicts:
+                row_dict = _plain_row(row_dict)
+                image = VoyagerISS._index_image_path(filepath, row_dict)
+                fetched = (image.is_local()
+                           or pathlib.Path(image.get_local_path()).exists())
+                yield VoyagerISS._make_snapshot(
+                    _without_nulls(row_dict), filepath=image, fetched=fetched,
+                    return_all_planets=return_all_planets, check_pointing=False,
+                    overrides=overrides)
 
-        return snapshots
+        return snapshots()
 
     @staticmethod
     def _index_image_path(index, row_dict):

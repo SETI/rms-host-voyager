@@ -62,10 +62,11 @@ Reading a PDS3 index
 :exc:`~oops.host.HostFormatError`
     A row gives no exposure, camera, or spacecraft; neither a time nor a clock count; or,
     unless ``frame`` is given, no clock stop count. The message gives the missing item
-    and the image file.
+    and the image file. This error is raised when the iteration reaches that row.
 
 :exc:`oops.OopsSpiceError`
-    A row gives no time, and the clock kernel cannot convert its clock count.
+    A row gives no time, and the clock kernel cannot convert its clock count. This error
+    is raised when the iteration reaches that row.
 
 :exc:`~oops.OopsTypeError`
     A keyword argument is not one that the method accepts.

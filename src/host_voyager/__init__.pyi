@@ -15,6 +15,7 @@ The detectors and support methods that a Host subclass overrides or calls, such 
 """
 
 import pathlib
+from collections.abc import Iterator
 from typing import Any
 
 from filecache import FCPath
@@ -64,12 +65,12 @@ class VoyagerISS(Host):
         timeshift: tuple[float, str] | None = None,
         navigation: tuple[float, ...] | None = None, tracker: str | None = None,
         parallel: Observation | None = None, **kwargs: Any) -> Snapshot: ...
-    # Every row is one Snapshot, so the list is typed more narrowly than Host's, which a
-    # list's invariance does not allow. The supplement is required: None raises
+    # Every row is one Snapshot. The supplement is required: None raises
     # oops.host.HostIndexError unless row_dicts is given. select must be None
-    # (oops.OopsValueError), and any other keyword raises oops.OopsTypeError.
+    # (oops.OopsValueError), and any other keyword raises oops.OopsTypeError. The
+    # iterator builds each row's Snapshot when it reaches the row.
     @staticmethod
-    def from_index(  # type: ignore[override]
+    def from_index(
         filepath: str | pathlib.Path | FCPath, *,
         supplement: str | pathlib.Path | FCPath | object | None = ...,
         label: Pds3Label | None = None,
@@ -83,7 +84,7 @@ class VoyagerISS(Host):
         calibrations: Calibration | list[Calibration] | None = None,
         timeshift: tuple[float, str] | None = None,
         navigation: tuple[float, ...] | None = None, tracker: str | None = None,
-        parallel: Observation | None = None, **kwargs: Any) -> list[Snapshot]: ...
+        parallel: Observation | None = None, **kwargs: Any) -> Iterator[Snapshot]: ...
     @staticmethod
     def initialize(*, planets: list[Any] | None = None, asof: str | None = None,
         irregulars: bool = True) -> None: ...
