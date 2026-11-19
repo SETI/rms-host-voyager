@@ -31,7 +31,8 @@ apply here to the stubs described below.
   (`-W -n`), codespell and PyMarkdown. `ruff format` is disabled.
   `.github/workflows/run-tests.yml` runs the same set. `scripts/setup-venv.sh` builds the
   `venv/` that the scripts expect; set `VENV` to use another.
-- The `oops.Host` API arrived in rms-oops 0.4.0, the minimum version in `pyproject.toml`.
+- The `oops.Host` API arrived in rms-oops 0.4.0 and `oops.OopsSpiceError` arrives in
+  0.5.0, the minimum version in `pyproject.toml`.
 - The type information is published in two stubs: `host_voyager/__init__.pyi` declares
   `VoyagerISS` in full, and `host_voyager/oops/__init__.pyi` re-exports it. `stubtest`
   checks them against the runtime in the check script and in CI, so adding, renaming or
@@ -95,16 +96,20 @@ apply here to the stubs described below.
   spells as a label does (`9096:16:001` for FDS `09096.16`); an index row without the
   supplement gives only `IMAGE_NUMBER`, from which `_clock_count()` derives it. A frame
   `timeshift` ("F") has no effect on the fixed matrix.
-- An image with no record (without a `frame` override) raises `_UnusableImageError`, a
-  `HostError`, from `from_file()`, under either cspyce error action ("EXCEPTION" raises
-  `ValueError` or `OSError` subclasses, "RUNTIME" raises `RuntimeError`, as in
-  `_Voyager.sclk_ticks()`). Its cause is the SPICE exception and its message ends
-  with the SPICE short code, as in `...: SPICE(CKINSUFFDATA)`, which is how SpinDoctor
-  tells missing SPICE data from other failures. An image for which no source read gives
-  the time, exposure, camera, spacecraft, mission phase or (without a `frame` override)
-  clock count raises `_MissingItemError`, a `HostFormatError` that names the item and the
-  file. `from_index()` leaves either kind out. Across the VGISS labels that is 17 images
-  with no time and 2,137 with no record, 1,090 of them in VGISS_8210.
+- Missing SPICE data for the pointing raises `oops.OopsSpiceError` (rms-oops 0.5.0),
+  built with `OopsSpiceError.from_spice_error()`: "no Voyager 1 ISS NAC pointing at
+  <midtime> for <image file>: SPICE(CKINSUFFDATA)", the midtime after any cadence or
+  timeshift override, the SPICE exception as its cause. `_camera_frame()` catches exactly
+  `(LookupError, OSError, RuntimeError, ValueError)`, what cspyce raises under either
+  error action, around `sclk_ticks()`, `ckgp` and `pxform`, and then returns a
+  `_NoPointingFrame`, which raises that error whenever it is evaluated. `from_file()`
+  evaluates the frame at the midtime, so it raises at load time; `from_index()` does not,
+  so it keeps the row. Neither checks anything when a `frame` override is given. An image
+  for which no source read gives the time, exposure, camera, spacecraft, mission phase
+  or (without a `frame` override) clock count raises `oops.host.HostFormatError`, naming
+  the item and the file, from both methods. Across the VGISS labels that is 17 images
+  with no time and 2,137 with no record, 1,090 of them in VGISS_8210; the index of
+  VGISS_6201 gives no exposure for C3940530, so `from_index()` raises for that volume.
 - `from_index()` accepts only a `VGISS_xxxx_raw_image_index.lbl`, one row per RAW image,
   never the full `VGISS_xxxx_index.lbl` (one row per label: RAW, CLEANED, CALIB, GEOMED
   and the reseau and tiepoint tables), because OPUS archives only the raw images. The
@@ -133,17 +138,22 @@ apply here to the stubs described below.
   image file. The metadata come from whatever was read. `_header_items()` converts the
   VICAR header's `LAB02`, `LAB03` and `LAB05` fields and its tasks to the label's names
   and forms, leaving out any field filled with asterisks or garbled (an hour of 24 or
-  more, a year outside 77-99, PICNO bytes, FDS 00000.00). `_merge_items()` takes an item
-  from whichever source gives it and applies `_RESOLUTION` where both do: the label wins
-  every item except `EXPOSURE_DURATION`, where the header wins if the label's value is
-  the header's truncated to 0.01 s. The comment above `_RESOLUTION` gives the survey
-  counts and the issues that record each difference for a final decision; keep them in
-  step. A PDS3
-  null (`UNK`, `N/A`, `NULL`, and -99.9999 in the index) counts as missing. A subfield no
+  more, a year outside 77-99, PICNO bytes, FDS 00000.00), and respells the target fields
+  that no label uses through `_HEADER_TARGET_SPELLINGS` (`ENCELADU`, `1989N1`, ...; #15).
+  `_merge_items()` takes an item from whichever source gives it and, where both do,
+  the source that `_RESOLUTION` names for that item, "label" or "header", the same for
+  every image; never a per-image test. Every item is "label" now. The comment above
+  `_RESOLUTION` gives the evidence for each choice, and #14 lists the images on which
+  the winner is wrong; keep them in step. A null (`UNK`, `N/A`, `NULL` in any case,
+  None, a list of nulls, and -99.9999 in the index) counts as missing. A subfield no
   source gives is absent, never None (`if_scale` included). `dict` is the merged metadata
-  plus every other key of each source (`LAB02`, `LABEL3`, ...); `label_dict` is the label
-  and `header_dict` the header (`as_dict(unique=False)`), each only when read. Consumers
-  read the documented subfields, including `spacecraft_clock_start_count` and
+  plus every other key of each source (`LABEL3`, ...), but never `LAB02`, `LAB03` or
+  `LAB05`, whose fields it holds under PDS3 names. `label_dict` is the label (built with
+  `sources=False`, times as the parser's ISO strings, sets as lists, no END) and
+  `header_dict` the header (`as_dict(unique=True)`, a repeated parameter keyed
+  `TASK[0]`, `TASK[1]`, ...), each only when read; all three are JSON. `spacecraft`, the
+  int 1 or 2, is how a consumer tells Voyager 1 from Voyager 2. Consumers read the
+  documented subfields, including `spacecraft_clock_start_count` and
   `spacecraft_clock_stop_count`, rather than parsing `dict`.
 - `filepath`, `basename`, `abspath` and `image_url` name the image file on every input.
   They are absent for parsed content with no file path (a `Pds3Label` made from text, a
@@ -160,10 +170,14 @@ apply here to the stubs described below.
   respells it as the label does (`CLEAR`, `CH4_JS`) on every path.
 - pdsparser's default "fast" method rejects some valid VGISS labels, such as
   `C2673426_GEOMED.LBL` of VGISS_7205, whose quoted `NOTE` value starts on the line after
-  the keyword; `from_file()` then parses the label again with "strict", then "loose". The
-  generic
-  `oops.Host.from_file()` parses the label itself before it reaches the host, so it still
-  fails on those labels; that fix belongs in rms-oops or pdsparser.
+  the keyword; `from_file()` then parses the label again with "strict", then "loose",
+  also after a `ValueError` (an hour of 24), and raises `PdsHostError` naming the label
+  if all fail. The generic `oops.Host.from_file()` parses the label itself before it
+  reaches the host, so it still fails on those labels, and its default `sources=True`
+  reaches the host's `label_dict`; those fixes belong in rms-oops or pdsparser.
+- The labels of the RESLOC and GEOMA tables have no `^IMAGE` and raise `PdsHostError`;
+  their VICAR files (`TYPE='TABULAR'`) raise `VicarHostError`, as does an image file cut
+  short. Parsed content of another host raises `WrongHostError` (#17).
 - Labels name the spacecraft in `INSTRUMENT_HOST_NAME` ("VOYAGER 1") and the camera in
   `INSTRUMENT_ID` (`ISSN`/`ISSW`). `IMAGE_TIME` and `STOP_TIME` are the shutter close, and
   `EXPOSURE_DURATION` is in seconds in a label but milliseconds in the VICAR header. The
@@ -173,7 +187,8 @@ apply here to the stubs described below.
   undistorted, every other product 800x800 (raw geometry). A VICAR header has no
   `PRODUCT_TYPE`; `_header_items()` infers it from the VICAR tasks (`GEOMA` means GEOMED).
 - `_TARGET_NAME_REPAIRS`, `_PLANET_TARGETS` and `_TARGET_STARS` in `iss.py` cover every
-  `TARGET_NAME` in the VGISS raw image indexes; the `*999` volumes are cumulative indexes
+  `TARGET_NAME` in the VGISS raw image indexes, and, after `_HEADER_TARGET_SPELLINGS`,
+  every target field of their VICAR headers; the `*999` volumes are cumulative indexes
   that repeat every row, so leave them out of any survey.
 - Running anything needs SPICE kernels through `spicedb` (`SPICE_PATH`, or
   `$OOPS_RESOURCES/SPICE`, plus `SPICE_SQLITE_DB_NAME`). `spicedb` currently ships inside

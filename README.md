@@ -83,17 +83,22 @@ snapshots = VoyagerISS.from_index('VGISS_6109_raw_image_index.lbl')
   names, which must exist, and merges the metadata of the two; with `astrometry=True` it
   reads only the label, and the image file need not exist. The file names in the
   `Snapshot` are always those of the image file.
-- Where the label and the VICAR header disagree, the label's value is used, except for
-  the exposure: some labels give the exposure cut short to 0.01 s, and the header's full
-  value is then used. Fields that the VICAR header fills with asterisks or garbles, such
-  as an unknown time, count as missing. Both sources stay available, as `label_dict` and
-  `header_dict`, and `dict` holds the merged metadata.
-- Each `Snapshot` gives the spacecraft number as `spacecraft`, the filter as the PDS3
-  label spells it as `filter`, the spacecraft clock counts as
-  `spacecraft_clock_start_count` and `spacecraft_clock_stop_count`, and, for a CALIB or
-  GEOMED image, the factor that converts its data to I/F as `if_scale`. A value that
-  nothing read gives is left out: `if_scale` is absent for a RAW or CLEANED image and for
-  a label read with `astrometry=True`, so check for it before use.
+- Where the label and the VICAR header disagree, the label's value is used for every
+  item, the same way for every image. Fields that the VICAR header fills with asterisks
+  or garbles, such as an unknown time, count as missing, and a value missing from the
+  label is taken from the header. Both sources stay available, as `label_dict` and
+  `header_dict`, and `dict` holds the merged metadata. All three can be written as JSON:
+  times are ISO 8601 strings such as `1980-10-29T05:57:22.000`. `header_dict` keeps
+  every VICAR parameter; one that occurs more than once, such as the TASK of each
+  processing step, is keyed `TASK[0]`, `TASK[1]`, and so on.
+- Each `Snapshot` gives the filter as the PDS3 label spells it as `filter`, the
+  spacecraft clock counts as `spacecraft_clock_start_count` and
+  `spacecraft_clock_stop_count`, and, for a CALIB or GEOMED image, the factor that
+  converts its data to I/F as `if_scale`. A value that nothing read gives is left out:
+  `if_scale` is absent for a RAW or CLEANED image and for a label read with
+  `astrometry=True`, so check for it before use.
+- `spacecraft` tells Voyager 1 from Voyager 2: it is the int 1 or 2, present on every
+  `Snapshot`, whichever file was read.
 - `VoyagerISS.from_index()` makes one `Snapshot` for each row of a raw image index,
   merging in the columns of the supplemental index. The volume index, which lists every
   product, is not accepted.
@@ -102,10 +107,17 @@ snapshots = VoyagerISS.from_index('VGISS_6109_raw_image_index.lbl')
   because the records are stamped at the count and the count can fall minutes after the
   shutter closed. The
   [timing and pointing page](https://rms-host-voyager.readthedocs.io/en/latest/pointing.html)
-  gives the evidence. An image with no time or exposure, or no record, cannot be read;
-  `from_index()` leaves it out.
+  gives the evidence.
+- An image cannot be read without its time, exposure, camera, spacecraft, and mission
+  phase, and, unless a `frame` override is given, its spacecraft clock count; both
+  methods then raise `oops.host.HostFormatError`. Without a `frame` override,
+  `from_file()` raises `oops.OopsSpiceError` for an image whose pointing the SPICE
+  kernels cannot supply. `from_index()` does not check the pointing: it returns the
+  `Snapshot`, and evaluating its frame raises the same error.
 - A target named in the label is repaired where it names no body that oops knows, such as
-  the ring planes, and an image of a star uses that star as its light source.
+  the ring planes, and an image of a star uses that star as its light source. A VICAR
+  header's own spellings of a target, such as `ENCELADU` or `1989N1`, are read as the
+  label's names, `ENCELADUS` and `PROTEUS`.
 
 Details are available in the
 [module documentation](https://rms-host-voyager.readthedocs.io/en/latest/module.html).
