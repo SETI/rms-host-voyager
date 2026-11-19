@@ -141,8 +141,12 @@ apply here to the stubs described below.
   `EXPOSURE_DURATION` `BYTES = 7` where the field and its `FORMAT` "F9.4" are 9 wide, so
   `_index_label()` widens any column to its FORMAT width before the table is read
   (1,597 of 76,652 rows lose digits otherwise, and the null -99.9999 reads -99.99).
-  Rows given without `STOP_TIME`, as `oops.Host.from_index()` passes them (read without
-  the supplement and the repair), are replaced by the host's own reading of the same
+  `oops.Host.from_index()` identifies the host from the first row and passes the call to
+  `VoyagerISS.from_index()`, which reads the rows; `oops.Host._read_index_rows()` pairs
+  them by position when the two tables list the same files in the same order (every
+  VGISS volume does) and otherwise by `VOLUME_NAME` and `FILE_SPECIFICATION_NAME`, its
+  default file key. Rows given without `STOP_TIME` (read without the supplement and the
+  repair) are replaced by the host's own reading of the same
   rows, matched by `VOLUME_NAME` and `FILE_SPECIFICATION_NAME`; naming the supplement
   rejects the rows of a full index. The table reader's `_mask` entries are dropped; the
   only declared null constants (exposure -99.9999, supplement `UNK` times) and the

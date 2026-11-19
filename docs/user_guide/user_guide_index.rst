@@ -42,9 +42,13 @@ The ``supplement`` argument chooses the supplemental index:
 - A path or URL reads that file instead.
 - None raises :exc:`~oops.host.HostIndexError`, unless ``row_dicts`` is given.
 
-The two tables must list the same images in the same order. The host checks each pair of
-rows by its ``VOLUME_NAME`` and ``FILE_SPECIFICATION_NAME`` and raises
-:exc:`~oops.host.HostIndexError` at the first pair that differs.
+The two tables must list the same images, but not necessarily in the same order. When
+they list them in the same order, as every VGISS volume does, each index row is merged
+with the supplement row in the same position. When they do not, each index row is
+merged with the supplement row that has the same ``VOLUME_NAME`` and
+``FILE_SPECIFICATION_NAME``. The host raises :exc:`~oops.host.HostIndexError` if an image
+appears in only one of the tables, or if, when the orders differ, either table lists an
+image twice. The error names the first few such images and both tables.
 
 The labels of the raw image indexes give the ``EXPOSURE_DURATION`` column a width of 7
 bytes, while its format and the table itself give it 9. Read as the labels say, an
@@ -59,8 +63,8 @@ Other arguments
 ``row_dicts``
     The rows themselves, one dictionary per row, if the tables have already been read.
     Rows that hold the supplement's ``STOP_TIME`` column are used as they are, and so is
-    any row when ``supplement`` is None. Rows without that column, as
-    :meth:`oops.host.Host.from_index` passes them, are read again from the index and its
+    any row when ``supplement`` is None. Rows without that column, such as rows read
+    from the index alone, are read again from the index and its
     supplement, matched by ``VOLUME_NAME`` and ``FILE_SPECIFICATION_NAME``, so that they
     too have the supplement's columns and the whole exposure.
 
@@ -122,8 +126,7 @@ the location of the index:
 Reading an index through oops.Host
 ==================================
 
-:meth:`oops.host.Host.from_index` reads the rows of a raw image index itself, without
-the supplement, and passes them to the host, which reads them again with the supplement
-as described for ``row_dicts``. The Snapshots are those that
-:meth:`~host_voyager.oops.iss.VoyagerISS.from_index` gives, except that a ``filter`` is
-applied to the rows as first read, whose exposures may lack their last two digits.
+:meth:`oops.host.Host.from_index` recognizes a raw image index from its first row and
+passes it, with its other arguments, to
+:meth:`~host_voyager.oops.iss.VoyagerISS.from_index`, so the two give the same
+Snapshots.

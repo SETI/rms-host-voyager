@@ -1984,7 +1984,6 @@ def test_from_index_fov_override() -> None:
 
 
 def test_host_from_index_dispatches_to_iss() -> None:
-    # oops.Host.from_index cannot name this supplement, so VoyagerISS merges it
     obs = list(oops.Host.from_index(INDEX))[9]
     assert obs.instrument == 'ISS'
     assert obs.dict['STOP_TIME'] == STOP_TIME

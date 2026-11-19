@@ -937,18 +937,19 @@ class VoyagerISS(oops.Host):
             supplement (str | pathlib.Path | FCPath | object, optional): The path to the
                 PDS label of the supplemental index, whose columns are merged into each
                 row; a raw image index needs its supplement. Its rows must name the same
-                files in the same order as the index; where both tables give a column,
-                the index value is kept. The default, `oops.Host.SUPPLEMENT`, reads the
-                file in the directory of `filepath` whose name matches except that
-                "_raw_image_index" is replaced by "_supplemental_index" in upper or lower
-                case.
+                files as the index's: they are paired by position where the two tables
+                list the files in the same order, and otherwise by VOLUME_NAME and
+                FILE_SPECIFICATION_NAME. Where both tables give a column, the index value
+                is kept. The default, `oops.Host.SUPPLEMENT`, reads the file in the
+                directory of `filepath` whose name matches except that "_raw_image_index"
+                is replaced by "_supplemental_index" in upper or lower case.
             label (Pds3Label, optional): The PDS label of `filepath` if it has already
                 been read.
             row_dicts (list[dict[str, Any]], optional): A list of dictionaries, one per
                 row of the index, or of some of its rows. Include if `filepath` has
                 already been read. Rows with a STOP_TIME column, from the supplement, are
                 used as they are, as are any rows if `supplement` is None. Rows without
-                it, as :meth:`oops.Host.from_index` passes them, are replaced by the same
+                it, such as rows read from `filepath` alone, are replaced by the same
                 rows as this method reads them from `filepath` and `supplement`, matched
                 by VOLUME_NAME and FILE_SPECIFICATION_NAME, so that they too have the
                 supplement's columns and the whole exposure (see Returns).
@@ -1040,10 +1041,11 @@ class VoyagerISS(oops.Host):
             FileNotFoundError: If the supplement does not exist.
             oops.host.HostIndexError: If `supplement` is None while `row_dicts` is not
                 given; if `supplement` is `oops.Host.SUPPLEMENT` and the name of
-                `filepath` contains no "_raw_image_index"; if the supplement does not
-                have the same number of rows as the index, or if a row's VOLUME_NAME or
-                FILE_SPECIFICATION_NAME differs from the index's; or, for `row_dicts`
-                without STOP_TIME, if the index has no row for one of them.
+                `filepath` contains no "_raw_image_index"; if an index row has no
+                supplement row or a supplement row belongs to no index row; if, where the
+                two tables list the files in different orders, either lists a file twice;
+                or, for `row_dicts` without STOP_TIME, if the index has no row for one of
+                them.
             oops.host.PdsHostError: If the label of `filepath` cannot be parsed.
             oops.host.WrongHostError: If `filepath` is not a Voyager ISS index.
             OSError: If `filepath`, or a `supplement` that is specified, does not exist or
@@ -1062,10 +1064,10 @@ class VoyagerISS(oops.Host):
         VoyagerISS.initialize()
 
         # Read and filter the index table. The supplement is required, so None is refused
-        # rather than taken to mean "search for it". oops.Host.from_index() passes the
-        # rows of whatever index it was given, read without the supplement, whose name it
-        # cannot derive, and with the exposure cut short; those rows are read again here.
-        # Naming the supplement rejects any index but a raw image index.
+        # rather than taken to mean "search for it". Rows given without the supplement's
+        # columns, such as rows read from the index alone with the exposure cut short,
+        # are read again here. Naming the supplement rejects any index but a raw image
+        # index.
         filepath = FCPath(filepath)
         if supplement is None and row_dicts is None:
             raise oops.host.HostIndexError(f'Voyager ISS raw image index needs its '
