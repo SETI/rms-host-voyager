@@ -1071,6 +1071,24 @@ def test_from_file_accepts_a_parsed_label() -> None:
     assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
 
 
+@pytest.mark.usefixtures('body_path')
+def test_from_file_passes_every_override() -> None:
+    """from_file hands each override to oops.Host, which rejects `parallel` together
+    with `tracker`."""
+
+    parallel = VoyagerISS.from_file(GEOMED_VICAR, astrometry=True)
+    with pytest.raises(oops.OopsValueError,
+                       match='parallel and tracker cannot both be specified'):
+        VoyagerISS.from_file(GEOMED_VICAR, astrometry=True, parallel=parallel,
+                             target='TITAN', tracker='midtime')
+
+
+def test_from_file_parallel_frame() -> None:
+    parallel = VoyagerISS.from_file(GEOMED_VICAR, astrometry=True)
+    obs = VoyagerISS.from_file(GEOMED_VICAR, astrometry=True, parallel=parallel)
+    assert obs.frame.reference is parallel.frame
+
+
 def test_from_file_initializes_iss() -> None:
     VoyagerISS.from_file(RAW_LABEL, astrometry=True)
     assert VoyagerISS._initialized

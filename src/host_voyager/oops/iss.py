@@ -492,7 +492,7 @@ class VoyagerISS(oops.Host):
             'timeshift'   : timeshift,
             'navigation'  : navigation,
             'tracker'     : tracker,
-            '/seti/newnav/capped-run.sh parallel'    : parallel,
+            'parallel'    : parallel,
         }
 
         sources = {'label_dict': label_dict, 'header_dict': header_dict,
