@@ -85,7 +85,8 @@ apply here to the stubs described below.
   number, `hhhhh:mm:001`), which is often whole FDS minutes (48 s each; 768.7 s for
   C3450201) after the true shutter close, `STOP_TIME`. A time lookup near `STOP_TIME`,
   whether `ckgp` at mid-exposure as in the rms-oops host or a `SpiceType1Frame`, returns a
-  neighboring image's record. `docs/pointing.rst` gives the evidence: fits of real images
+  neighboring image's record. `docs/user_guide/user_guide_appendix_pointing.rst` gives
+  the evidence: fits of real images
   show that the record at the image's own count holds its pointing, and that `STOP_TIME`,
   not the count, is the shutter time.
 - So the time is `STOP_TIME`, else `IMAGE_TIME`. Only when no source read gives either

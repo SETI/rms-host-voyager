@@ -9,9 +9,9 @@ Welcome to the Documentation for rms-host-voyager!
 
 .. toctree::
    :maxdepth: 2
-   :caption: Voyager ISS:
+   :caption: User Guide:
 
-   pointing
+   user_guide/user_guide
 
 .. toctree::
    :maxdepth: 2

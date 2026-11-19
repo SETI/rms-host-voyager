@@ -1,6 +1,11 @@
 ##########################################################################################
 # host_voyager/oops/iss.py
 ##########################################################################################
+"""The Voyager ISS host, which makes a Snapshot from each image of the ISS cameras.
+
+The :doc:`user guide </user_guide/user_guide>` describes the products it reads, how it
+merges the two labels of each product, and the errors it raises.
+"""
 
 import datetime as dt
 import pathlib
@@ -22,7 +27,8 @@ __all__ = ['VoyagerISS']
 # The scan platform C kernels hold one pointing record per image, stamped at the image's
 # own spacecraft clock stop count, which can be whole FDS minutes (48 s each) after the
 # true close of the shutter, STOP_TIME. The record is therefore found by the count, never
-# by the time; see docs/pointing.rst. The tolerance is in clock ticks of 60 ms.
+# by the time; see docs/user_guide/user_guide_appendix_pointing.rst. The tolerance is in
+# clock ticks of 60 ms.
 _TICK_TOLERANCE = 20
 
 # The exceptions that cspyce raises when the kernels cannot supply what was asked for:
@@ -1724,8 +1730,10 @@ class VoyagerISS(oops.Host):
     def initialize(*, planets=None, asof=None, irregulars=True):
         """Initialize key information about the ISS instrument.
 
-        Loads the mission and ISS kernels and constructs the FOVs. Must be called first.
-        After the first call, later calls to this function are ignored.
+        Loads the mission and ISS kernels and constructs the FOVs. :meth:`from_file` and
+        :meth:`from_index` call it with the default values; call it before them only to
+        choose other values. After the first call, later calls to this function are
+        ignored.
 
         Parameters:
             planets (list, optional): A list of planets to pass to
