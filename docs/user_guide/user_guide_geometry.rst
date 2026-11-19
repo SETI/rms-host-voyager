@@ -7,7 +7,8 @@ Time
 
 ``STOP_TIME`` is the close of the shutter, in UTC at the spacecraft. A PDS3 label and the
 supplemental index give it to 1/100 s. The exposure ends at ``STOP_TIME`` and begins
-``EXPOSURE_DURATION`` earlier, and the Snapshot's cadence covers exactly that interval.
+``EXPOSURE_DURATION`` earlier, and the Snapshot's default cadence covers exactly that
+interval.
 Without ``STOP_TIME``, the host uses ``IMAGE_TIME``, the same time to the second, which
 the raw image index gives. The VICAR header gives both as its spacecraft event time,
 also to the second.
@@ -83,7 +84,7 @@ bodies that OOPS knows, and the host repairs them:
    * - ``SYSTEM``, ``UNK SAT``
      - The planet of the encounter
 
-The light source is the Sun, except in an image of a star. When the target is
+By default the light source is the Sun, except in an image of a star. When the target is
 ``ARCTURUS``, ``BETA CMA``, ``PLEIADES``, ``SIGMA SGR``, ``THETA CAR``, or ``VEGA``, that
 star becomes the light source and the target becomes ``NONE``.
 

@@ -29,6 +29,10 @@ variables:
     The SQLite database that lists the kernels. If it is not set, ``SPICE.db`` in the
     ``SPICE_PATH`` directory is used.
 
+The kernels and the database are the ones that OOPS itself uses. The
+`rms-oops README <https://github.com/SETI/rms-oops#environment-variables>`_ describes
+these variables and the ``SPICE`` directory of ``$OOPS_RESOURCES`` that holds them.
+
 For both spacecraft, the host furnishes the kernels that the database lists: the scan
 platform C kernels, the spacecraft ephemeris of each planetary encounter, and the
 instrument, frame, and spacecraft clock kernels. The encounter ephemerides cover only a
