@@ -2,13 +2,12 @@
 # host_voyager/oops/_voyager.py
 ##########################################################################################
 
-import os
-
 import julian
 import spicedb
 import cspyce
 import oops
 
+from filecache import FCPath
 from oops.body import Body
 
 # The planetary encounters, each running from its start time until the next one begins.
@@ -26,6 +25,26 @@ for _phase in TIMELINE:
 
 _ALL_PLANETS = ['MERCURY', 'VENUS', 'EARTH', 'MARS', 'JUPITER', 'SATURN', 'URANUS',
                 'NEPTUNE']
+
+# The periods in which each spacecraft's cameras took the VGISS images: for each
+# encounter, the first and last STOP_TIME in the raw image indexes, widened by 30 days.
+# The FDS clock count recurs about every six years, in another clock partition; for every
+# one of the 76,635 raw images with a STOP_TIME, exactly one partition puts its count in
+# one of these periods, the partition that the supplemental index gives.
+IMAGING_PERIODS = {
+    1: [('1978-11-11', '1979-05-14'),       # Jupiter
+        ('1980-07-24', '1981-01-14')],      # Saturn
+    2: [('1979-03-16', '1979-08-15'),       # Jupiter
+        ('1981-05-06', '1981-10-05'),       # Saturn
+        ('1985-10-07', '1986-03-21'),       # Uranus
+        ('1989-05-06', '1989-10-29')],      # Neptune
+}
+
+_IMAGING_PERIODS_TDB = {
+    vgr: [tuple(julian.tdb_from_tai(julian.tai_from_iso(day)) for day in period)
+          for period in periods]
+    for (vgr, periods) in IMAGING_PERIODS.items()
+}
 
 # NAIF's merged trajectory of each spacecraft from launch through 2021, relative to the
 # root of the SPICE file tree, with its release date. The encounter SP kernels cover
@@ -151,7 +170,7 @@ class _Voyager:
         # Solar System that another host defined first would otherwise yield to the
         # planet barycenters in these files, even outside the Voyager mission
         earlier = [info for abspath in spicedb.FURNISHED_ABSPATHS['SPK']
-                   for info in spicedb.FURNISHED_INFO[os.path.basename(abspath)]]
+                   for info in spicedb.FURNISHED_INFO[FCPath(abspath).name]]
         spicedb.furnish_kernels(kernels, fast=True)
         if earlier:
             spicedb.furnish_kernels(earlier, fast=False)
@@ -268,23 +287,26 @@ class _Voyager:
 
         The FDS clock wraps every 65536 FDS hours, so the same count recurs in each clock
         partition. Without a partition, the one in which the count falls nearest a given
-        time is used. The clock kernels must have been furnished, by
-        :meth:`load_instruments`.
+        time is used; without that time either, the one partition in which the count falls
+        within one of the spacecraft's :data:`IMAGING_PERIODS`. The clock kernels must
+        have been furnished, by :meth:`load_instruments`.
 
         Parameters:
             vgr (int): The spacecraft number, 1 or 2.
             count (str): The FDS count, "hhhhh:mm:ddd".
-            partition (int, optional): The clock partition; None to choose one by `near`.
+            partition (int, optional): The clock partition; None to choose one by `near`
+                or by the imaging periods.
             near (float, optional): The time in seconds TDB near which the count falls;
-                required if `partition` is None.
+                None to choose the partition by the imaging periods.
 
         Returns:
             float: The encoded clock ticks.
 
         Raises:
-            ValueError: If the count falls in no partition, or not in the one given. Under
-                the "RUNTIME" error action of cspyce, a count not in the partition given
-                raises RuntimeError instead.
+            ValueError: If the count falls in no partition, not in the one given, or,
+                with neither `partition` nor `near`, not in exactly one partition within
+                the imaging periods. Under the "RUNTIME" error action of cspyce, a count
+                not in the partition given raises RuntimeError instead.
         """
 
         naif_id = _Voyager.SPACECRAFT_IDS[vgr]
@@ -300,11 +322,20 @@ class _Voyager:
                 if 'SPICE(NOTINPART)' in str(err):
                     continue
                 raise
-            candidates.append((abs(cspyce.sct2e(naif_id, ticks) - near), ticks))
+            candidates.append((cspyce.sct2e(naif_id, ticks), ticks))
 
         if not candidates:
             raise ValueError(f'Voyager {vgr} clock count {count} is in no partition')
-        return min(candidates)[1]
+        if near is not None:
+            return min(candidates, key=lambda candidate: abs(candidate[0] - near))[1]
+
+        inside = [ticks for (tdb, ticks) in candidates
+                  if any(start <= tdb <= stop
+                         for (start, stop) in _IMAGING_PERIODS_TDB[vgr])]
+        if len(inside) != 1:
+            raise ValueError(f'Voyager {vgr} clock count {count} is in {len(inside)} '
+                             'clock partitions within the imaging periods')
+        return inside[0]
 
     @staticmethod
     def _format_asof(asof):

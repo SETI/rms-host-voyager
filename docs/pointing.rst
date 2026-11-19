@@ -87,26 +87,35 @@ its time stamp is not.
 What the host does
 ------------------
 
-* The time of an image comes from ``STOP_TIME``, or failing that ``IMAGE_TIME``, and
-  never from the clock count.
+* The time of an image comes from ``STOP_TIME``, or failing that ``IMAGE_TIME``.
+* Only when neither file read gives a time does it come from the clock stop count,
+  converted by the clock kernel, and the ``time_from_sclk`` subfield is then True. The
+  clock kernel gives the time at the spacecraft, as the labels' times are. For the
+  76,635 VGISS raw images whose labels give both, the count's time follows
+  ``STOP_TIME`` by a median of 0.9 s, and by at most 3 s for 79% of them; for most of
+  the rest it follows by whole FDS minutes, for the reason above, so a time taken from
+  the count can be that late. The labels give no time for 17 raw images, and the VICAR
+  headers give no valid time for 93.
 * The default frame of an image is a fixed :class:`~oops.frame.Cmatrix` relative to
   J2000, built from the image's own record, which is found by its clock stop count with
   a tolerance of 20 ticks (1.2 s). The record is never found by the time.
-* A label and a VICAR header do not give the clock partition. The host uses the
-  partition in which the count falls nearest ``STOP_TIME``. A VICAR header gives the
-  count as the image number in its ``LAB02`` line, which the host spells as a label does.
-  Where the label and the header give different counts, the label's is used: the
-  header's is wrong for some images, whose C-kernel records are found only by the
-  label's count.
+* A label and a VICAR header do not give the clock partition; the supplemental index
+  does. Without it, the host uses the partition in which the count falls nearest
+  ``STOP_TIME``, or, for an image without a time, nearest its ``EARTH_RECEIVED_TIME``,
+  which a VICAR header gives in its ``LAB04`` line. The FDS count recurs about every six
+  years, so a count can fall in more than one partition within the mission. A VICAR
+  header gives the count as the image number in its ``LAB02`` line, which the host
+  spells as a label does; where that field is the fill value 00000.00, the count comes
+  from the name of the image file, such as C3450201 for 34502.01. Where the label and the
+  header give different counts, the label's is used: the header's is wrong for some
+  images, whose C-kernel records are found only by the label's count.
 * :meth:`~host_voyager.oops.iss.VoyagerISS.from_file` raises
-  :exc:`oops.host.HostFormatError` for an image with no time, and
   :exc:`oops.OopsSpiceError` for an image with no record unless the `frame` override is
-  given. :meth:`~host_voyager.oops.iss.VoyagerISS.from_index` raises the same
-  :exc:`oops.host.HostFormatError` for a row with no time, but does not check the
+  given. :meth:`~host_voyager.oops.iss.VoyagerISS.from_index` does not check the
   record: it returns the Snapshot of an image with no record, and unless the `frame`
   override is given, evaluating that Snapshot's frame raises
-  :exc:`oops.OopsSpiceError`. Of the 76,652 VGISS raw images,
-  the labels give no time for 17, and 2,137 have no record, 1,090 of them in VGISS_8210.
+  :exc:`oops.OopsSpiceError`. Of the 76,652 VGISS raw images, 2,137 have no record,
+  1,090 of them in VGISS_8210.
 
 Because the frame is a fixed matrix, the `navigation` and `tracker` overrides work as
 usual, but a time shift of the frame, the letter "F" in the `timeshift` override, has no

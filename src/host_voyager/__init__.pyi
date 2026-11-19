@@ -37,8 +37,11 @@ class VoyagerISS(Host):
     # Without a `frame`, an image whose pointing the SPICE kernels cannot supply raises
     # oops.OopsSpiceError, "no Voyager 1 ISS NAC pointing at <midtime> for <image
     # file>: SPICE(CKINSUFFDATA)", whose cause is the SPICE exception. An image for which
-    # no source read gives the time, exposure, camera, spacecraft, mission phase or,
-    # unless `frame` is given, clock count raises oops.host.HostFormatError; a label
+    # no source read gives a time takes it from its clock count (time_from_sclk), and
+    # raises oops.OopsSpiceError if the clock kernel cannot convert the count. An image
+    # for which no source read gives the exposure, camera, spacecraft, a time or a clock
+    # count, or, unless `frame` is given, a clock count, raises
+    # oops.host.HostFormatError; a label
     # that no parser method reads, or that names no IMAGE file, raises
     # oops.host.PdsHostError; a VICAR file that cannot be read as an image raises
     # oops.host.VicarHostError; another mission's file or parsed content raises
@@ -62,11 +65,14 @@ class VoyagerISS(Host):
         navigation: tuple[float, ...] | None = None, tracker: str | None = None,
         parallel: Observation | None = None, **kwargs: Any) -> Snapshot: ...
     # Every row is one Snapshot, so the list is typed more narrowly than Host's, which a
-    # list's invariance does not allow.
+    # list's invariance does not allow. The supplement is required: None raises
+    # oops.host.HostIndexError unless row_dicts is given. select must be None
+    # (oops.OopsValueError), and any other keyword raises oops.OopsTypeError.
     @staticmethod
     def from_index(  # type: ignore[override]
         filepath: str | pathlib.Path | FCPath, *,
-        supplement: str | pathlib.Path | FCPath | object | None = None,
+        supplement: str | pathlib.Path | FCPath | object | None = ...,
+        label: Pds3Label | None = None,
         row_dicts: list[dict[str, Any]] | None = None,
         pds3_options: dict[str, Any] | None = None,
         filter: dict[str, Any] | None = None, return_all_planets: bool = False,

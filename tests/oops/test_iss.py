@@ -57,16 +57,16 @@ def label_dict(**changes: Any) -> dict[str, Any]:
 
 
 def snapshot(*, return_all_planets: bool = False, check_pointing: bool = True,
-             **changes: Any) -> Any:
-    """A Snapshot from `_make_snapshot`, which checks the pointing as `from_file` does
-    unless `check_pointing` is False; keywords named for overrides are overrides and
-    every other keyword changes the label, whose null values are then left out, as
-    `from_file` and `from_index` leave them out."""
+             filepath: str = 'VGISS_6109/X.IMG', **changes: Any) -> Any:
+    """A Snapshot from `_make_snapshot` for the image file `filepath`, which checks the
+    pointing as `from_file` does unless `check_pointing` is False; keywords named for
+    overrides are overrides and every other keyword changes the label, whose null values
+    are then left out, as `from_file` and `from_index` leave them out."""
 
     overrides = {name: changes.pop(name, None) for name in OVERRIDE_NAMES}
     VoyagerISS.initialize()
     return VoyagerISS._make_snapshot(iss._without_nulls(label_dict(**changes)),
-                                     filepath='VGISS_6109/X.IMG',
+                                     filepath=filepath,
                                      return_all_planets=return_all_planets,
                                      check_pointing=check_pointing,
                                      overrides=overrides)
@@ -142,6 +142,7 @@ def test_detect_in_pds3(label: dict[str, str], expected: bool) -> None:
 
 _LAB02 = 'VGR-1   FDS 34502.01   PICNO 0469S1-015   SCET 80.303 05:57:22         C'
 _LAB03 = 'NA CAMERA  EXP    1920.0 MSEC FILT 1(VIOLET)  LO GAIN  SCAN RATE  5:1  C'
+_LAB04 = 'ERT 80.303 07:35:06   1/ 1 FULL    RES   VIDICON TEMP  -80.00 DEG C    C'
 _LAB05 = 'IN/112380/ 9 OUT/xxxxxx/xx     SATURN      DSS #63   BIT SNR    8.297  C'
 _LABEL3 = 'FOR (I/F)*10000., MULTIPLY DN VALUE BY               0.10000'
 
@@ -230,19 +231,83 @@ def test_time_falls_back_to_image_time() -> None:
     assert obs.time[1] == pytest.approx(tdb('1980-10-29T05:57:23'), abs=1.e-6)
 
 
-@pytest.mark.parametrize('changes', [{'STOP_TIME': None, 'IMAGE_TIME': None},
-                                     {'STOP_TIME': 'UNK', 'IMAGE_TIME': 'UNK'}],
-                         ids=['absent', 'unknown'])
-def test_no_time_is_a_format_error(changes: dict[str, Any]) -> None:
-    with pytest.raises(oops.host.HostFormatError,
-                       match=r'VGISS_6109/X\.IMG has no STOP_TIME or IMAGE_TIME'):
-        snapshot(**changes)
-
-
-def test_time_never_comes_from_the_clock() -> None:
+def test_time_is_not_from_the_clock_when_a_time_is_given() -> None:
     # The clock count is one FDS minute later than STOP_TIME here
     obs = snapshot(SPACECRAFT_CLOCK_STOP_COUNT='34502:02:001')
     assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
+    assert obs.time_from_sclk is False
+
+
+# The fake clock places CLOCK_COUNT exactly at STOP_TIME in partition 2, and partition 3
+# starts one clock cycle, about 6 years, later
+_CYCLE = 65536 * 2880.
+
+
+@pytest.mark.parametrize('changes', [{'STOP_TIME': None, 'IMAGE_TIME': None},
+                                     {'STOP_TIME': 'UNK', 'IMAGE_TIME': 'UNK'}],
+                         ids=['absent', 'unknown'])
+def test_time_from_the_clock_count_without_a_time(changes: dict[str, Any]) -> None:
+    obs = snapshot(EARTH_RECEIVED_TIME='1980-10-29T07:35:06', **changes)
+    assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
+    assert obs.time_from_sclk is True
+
+
+def test_time_from_the_clock_count_in_a_given_partition() -> None:
+    obs = snapshot(STOP_TIME=None, IMAGE_TIME=None, SPACECRAFT_CLOCK_PARTITION_NUMBER=3)
+    assert obs.time[1] == pytest.approx(tdb(STOP_TIME) + _CYCLE, abs=1.e-6)
+
+
+@pytest.mark.parametrize(('cycles', 'partition'), [(0.1, 2), (0.9, 3)])
+def test_time_from_the_clock_count_in_the_partition_nearest_its_reception(
+        cycles: float, partition: int) -> None:
+    ert = julian.iso_from_tai(julian.tai_from_tdb(tdb(STOP_TIME) + cycles * _CYCLE))
+    obs = snapshot(STOP_TIME=None, IMAGE_TIME=None, EARTH_RECEIVED_TIME=str(ert))
+    expected = tdb(STOP_TIME) + (partition - 2) * _CYCLE
+    assert obs.time[1] == pytest.approx(expected, abs=1.e-6)
+
+
+def test_time_from_the_count_in_the_image_name() -> None:
+    obs = snapshot(STOP_TIME=None, IMAGE_TIME=None, SPACECRAFT_CLOCK_STOP_COUNT=None,
+                   IMAGE_NUMBER=None, SPACECRAFT_CLOCK_PARTITION_NUMBER=2,
+                   filepath='VGISS_6109/C3450201_RAW.IMG')
+    assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
+
+
+# Without a partition or an earth received time, the partition is the one that puts the
+# count in one of Voyager 1's imaging periods: partition 2's time, STOP_TIME, falls in
+# the Saturn encounter, and partition 3's in 1986
+def test_time_from_the_clock_count_in_the_imaging_periods() -> None:
+    obs = snapshot(STOP_TIME=None, IMAGE_TIME=None)
+    assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
+
+
+def test_clock_count_outside_the_imaging_periods_is_a_spice_error() -> None:
+    # About 150 days before STOP_TIME, in partition 2, and 6 years later in partition 3
+    with pytest.raises(oops.OopsSpiceError,
+                       match=r'^no Voyager 1 clock time for FDS count 30000:00:001 for '
+                             r'VGISS_6109/X\.IMG$'):
+        snapshot(STOP_TIME=None, IMAGE_TIME=None,
+                 SPACECRAFT_CLOCK_STOP_COUNT='30000:00:001')
+
+
+def test_no_time_and_no_clock_count_is_a_format_error() -> None:
+    with pytest.raises(oops.host.HostFormatError,
+                       match=r'VGISS_6109/X\.IMG has no STOP_TIME, IMAGE_TIME, '
+                             r'SPACECRAFT_CLOCK_STOP_COUNT or IMAGE_NUMBER$'):
+        snapshot(STOP_TIME=None, IMAGE_TIME=None, SPACECRAFT_CLOCK_STOP_COUNT=None,
+                 IMAGE_NUMBER=None, SPACECRAFT_CLOCK_PARTITION_NUMBER=2)
+
+
+def test_clock_count_the_clock_kernel_cannot_place_is_a_spice_error() -> None:
+    # Partition 1 holds no count in the fake clock
+    with pytest.raises(oops.OopsSpiceError,
+                       match=r'^no Voyager 1 clock time for FDS count 34502:01:001 for '
+                             r'VGISS_6109/X\.IMG: SPICE\(NOTINPART\)$'):
+        snapshot(STOP_TIME=None, IMAGE_TIME=None, SPACECRAFT_CLOCK_PARTITION_NUMBER=1)
+
+
+def test_planet_from_the_time_without_a_mission_phase() -> None:
+    assert snapshot(MISSION_PHASE_NAME=None).planet == 'SATURN'
 
 
 @pytest.mark.parametrize(('changes', 'item'), [
@@ -250,10 +315,9 @@ def test_time_never_comes_from_the_clock() -> None:
     ({'EXPOSURE_DURATION': 'UNK'}, 'EXPOSURE_DURATION'),
     ({'INSTRUMENT_ID': None}, 'INSTRUMENT_NAME'),
     ({'INSTRUMENT_HOST_NAME': None}, 'INSTRUMENT_HOST_NAME or SPACECRAFT_NAME'),
-    ({'MISSION_PHASE_NAME': 'UNK'}, 'MISSION_PHASE_NAME'),
     ({'SPACECRAFT_CLOCK_STOP_COUNT': None, 'IMAGE_NUMBER': None},
      'SPACECRAFT_CLOCK_STOP_COUNT or IMAGE_NUMBER'),
-], ids=['index-null-exposure', 'unknown-exposure', 'camera', 'spacecraft', 'phase',
+], ids=['index-null-exposure', 'unknown-exposure', 'camera', 'spacecraft',
         'clock-count'])
 def test_missing_required_item_is_a_format_error(changes: dict[str, Any],
                                                  item: str) -> None:
@@ -586,6 +650,7 @@ def test_header_items() -> None:
         'FILTER_NUMBER'              : '1',
         'TARGET_NAME'                : 'SATURN',
         'MISSION_PHASE_NAME'         : 'SATURN ENCOUNTER',
+        'EARTH_RECEIVED_TIME'        : '1980-10-29T07:35:06',
     }
 
 
@@ -599,10 +664,10 @@ def _vicar_header(**keywords: Any) -> vicar.VicarImage:
 
 
 def _header_items(**lines: str) -> dict[str, Any]:
-    """The items of a VICAR header holding the test LAB02, LAB03 and LAB05 lines, any of
-    which a keyword replaces."""
+    """The items of a VICAR header holding the test LAB02, LAB03, LAB04 and LAB05 lines,
+    any of which a keyword replaces."""
 
-    keywords = {'LAB02': _LAB02, 'LAB03': _LAB03, 'LAB05': _LAB05} | lines
+    keywords = {'LAB02': _LAB02, 'LAB03': _LAB03, 'LAB04': _LAB04, 'LAB05': _LAB05} | lines
     items: dict[str, Any] = VoyagerISS._header_items(_vicar_header(**keywords))
     return items
 
@@ -614,7 +679,7 @@ class _TaskHeader:
         self._tasks = ['TASK', *tasks]
 
     def as_dict(self, unique: bool = True) -> dict[str, str]:
-        return {'LAB02': _LAB02, 'LAB03': _LAB03, 'LAB05': _LAB05}
+        return {'LAB02': _LAB02, 'LAB03': _LAB03, 'LAB04': _LAB04, 'LAB05': _LAB05}
 
     def get(self, name: str, default: Any) -> Any:
         return self._tasks if name == 'TASK+' else default
@@ -690,17 +755,19 @@ def test_header_clock_count_is_spelled_as_the_label_spells_it() -> None:
      ['IMAGE_NUMBER', 'SPACECRAFT_CLOCK_STOP_COUNT']),
     ('LAB03', 'EXP    1920.0 MSEC', 'EXP    ****** MSEC', ['EXPOSURE_DURATION']),
     ('LAB03', 'FILT 1(VIOLET)', 'FILT *(******)', ['FILTER_NAME', 'FILTER_NUMBER']),
+    ('LAB04', 'ERT 80.303 07:35:06', 'ERT **.*** **:**:**', ['EARTH_RECEIVED_TIME']),
+    ('LAB04', 'ERT 80.303 07:35:06', 'ERT 80.303 24:35:06', ['EARTH_RECEIVED_TIME']),
     ('LAB05', 'SATURN     ', '           ', ['TARGET_NAME']),
 ], ids=['scet-asterisks', 'scet-hour-34', 'scet-year-08', 'scet-day-366-of-1981',
         'picno-asterisks', 'picno-placeholder', 'fds-short', 'fds-zero', 'exposure',
-        'filter', 'target-blank'])
+        'filter', 'ert-asterisks', 'ert-hour-24', 'target-blank'])
 def test_header_leaves_out_a_garbled_field(line: str, old: str, new: str,
                                            items: list[str]) -> None:
-    lines = {'LAB02': _LAB02, 'LAB03': _LAB03, 'LAB05': _LAB05}
+    lines = {'LAB02': _LAB02, 'LAB03': _LAB03, 'LAB04': _LAB04, 'LAB05': _LAB05}
     assert old in lines[line]
     found = _header_items(**{line: lines[line].replace(old, new)})
     assert [item for item in items if item in found] == []
-    assert len(found) == 13 - len(items)
+    assert len(found) == 14 - len(items)
 
 
 def test_header_keeps_day_366_of_a_leap_year() -> None:
@@ -732,6 +799,11 @@ def test_header_without_voyager_lines() -> None:
         'list-with-a-value', 'empty-list', 'none-text', 'zero'])
 def test_is_null(value: Any, null: bool) -> None:
     assert iss._is_null(value) is null
+
+
+def test_without_nulls_leaves_out_a_placeholder_picture_number() -> None:
+    dict_ = {'IMAGE_ID': '0000Z2+000', 'NOTE': '0000Z2+000', 'TARGET_NAME': 'UNK'}
+    assert iss._without_nulls(dict_) == {'NOTE': '0000Z2+000'}
 
 
 def test_merge_takes_an_item_from_the_source_that_gives_it() -> None:
@@ -816,9 +888,18 @@ def test_from_file_label_for_astrometry_reads_only_the_label(
     obs = VoyagerISS.from_file(label, astrometry=True)
     assert [name for name in ('if_scale', 'header_dict', 'data') if hasattr(obs, name)] \
         == []
-    assert set(obs.label_dict) == set(pdsparser.Pds3Label(label).as_dict()) - {'END'}
+    assert set(obs.label_dict) == _label_keywords(label)
     assert obs.spacecraft == 1
     assert obs.basename == GEOMED_VICAR.name
+
+
+def _label_keywords(label: pathlib.Path) -> set[str]:
+    """The keywords of a PDS3 label at its top level, without END and without the entries
+    that the parser adds, whose names hold lower-case letters, such as "STOP_TIME_fmt"
+    and "objects"."""
+
+    return {key for key in pdsparser.Pds3Label(label).as_dict()
+            if key == key.upper()} - {'END'}
 
 
 def _header_dict(image: pathlib.Path | FCPath) -> dict[str, Any]:
@@ -834,7 +915,7 @@ def test_from_file_label_reads_the_label_and_the_image(tmp_path: pathlib.Path) -
     (label, image) = _write_label_and_image(tmp_path, label3=_LABEL3)
     obs = VoyagerISS.from_file(label)
     assert obs.data.tolist() == np.arange(64).reshape(8, 8).tolist()
-    assert set(obs.label_dict) == set(pdsparser.Pds3Label(label).as_dict()) - {'END'}
+    assert set(obs.label_dict) == _label_keywords(label)
     assert obs.header_dict == _header_dict(image)
 
 
@@ -950,6 +1031,39 @@ def test_from_file_label_dict_has_no_end_and_no_sources(tmp_path: pathlib.Path,
             if key == 'END' or key.endswith('_source')] == []
 
 
+def _parser_entries(dict_: dict[str, Any]) -> list[str]:
+    """The names of the entries, at any depth, that the PDS3 label parser adds beside the
+    label's keywords, such as "STOP_TIME_fmt", "^IMAGE_offset" and "objects"."""
+
+    names = []
+    for (key, value) in dict_.items():
+        if key != key.upper():
+            names.append(key)
+        if isinstance(value, dict):
+            names += _parser_entries(value)
+    return names
+
+
+@pytest.mark.parametrize('input_', ['label', 'label-astrometry'])
+def test_from_file_label_dict_has_no_parser_entries(tmp_path: pathlib.Path,
+                                                    input_: str) -> None:
+    obs = _read_input(tmp_path, input_)
+    assert _parser_entries(obs.label_dict) == []
+
+
+@pytest.mark.parametrize('label_input', ['parsed-with-sources', 'sources-option'])
+def test_from_file_label_dict_has_no_source_entries(tmp_path: pathlib.Path,
+                                                    label_input: str) -> None:
+    (label, _image) = _write_label_and_image(tmp_path)
+    if label_input == 'parsed-with-sources':
+        obs = VoyagerISS.from_file(pdsparser.Pds3Label(label, sources=True),
+                                   astrometry=True)
+    else:
+        obs = VoyagerISS.from_file(label, astrometry=True,
+                                   pds3_options={'sources': True})
+    assert [key for key in obs.label_dict if key.endswith('_source')] == []
+
+
 @pytest.mark.parametrize('input_', INPUTS)
 def test_from_file_times_are_iso_strings(tmp_path: pathlib.Path, input_: str) -> None:
     obs = _read_input(tmp_path, input_)
@@ -1038,18 +1152,47 @@ def test_from_file_label_fills_a_null_from_the_header(tmp_path: pathlib.Path) ->
     assert obs.dict['STOP_TIME'] == '1980-10-29T05:57:22.000'
 
 
+def test_from_file_label_fills_a_placeholder_from_the_header(
+        tmp_path: pathlib.Path) -> None:
+    (label, _image) = _write_label_and_image(tmp_path)
+    label.write_text(label.read_text().replace('"0469S1-015"', '"0000Z1+000"'))
+    obs = VoyagerISS.from_file(label)
+    assert obs.label_dict['IMAGE_ID'] == '0000Z1+000'
+    assert obs.dict['IMAGE_ID'] == '0469S1-015'
+
+
 def test_from_file_label_reads_an_image_with_a_garbled_header(
         tmp_path: pathlib.Path) -> None:
-    """A label loads even when its image's SCET is unknown, and the image file alone
-    then reports what is missing."""
+    """A label loads even when its image's SCET is unknown, with the label's time."""
 
     lab02 = _LAB02.replace('SCET 80.303 05:57:22', 'SCET **.*** **:**:**')
-    (label, image) = _write_label_and_image(tmp_path, lab02=lab02)
+    (label, _image) = _write_label_and_image(tmp_path, lab02=lab02)
     obs = VoyagerISS.from_file(label)
     assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
-    with pytest.raises(oops.host.HostFormatError,
-                       match=r'C3450201\.IMG has no STOP_TIME or IMAGE_TIME'):
-        VoyagerISS.from_file(image)
+    assert obs.time_from_sclk is False
+
+
+def test_from_file_image_with_a_garbled_time_takes_it_from_the_clock(
+        tmp_path: pathlib.Path) -> None:
+    """The time of an image file whose SCET is unknown comes from its FDS count, in the
+    clock partition nearest the earth received time of LAB04."""
+
+    lab02 = _LAB02.replace('SCET 80.303 05:57:22', 'SCET **.*** **:**:**')
+    image = _write_vicar(tmp_path, lab02=lab02)
+    obs = VoyagerISS.from_file(image)
+    assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
+    assert obs.time_from_sclk is True
+    assert obs.planet == 'SATURN'
+    assert 'STOP_TIME' not in obs.dict
+
+
+def test_from_file_image_with_no_fds_count_takes_it_from_its_name(
+        tmp_path: pathlib.Path) -> None:
+    lab02 = _LAB02.replace('FDS 34502.01', 'FDS 00000.00')
+    image = _write_vicar(tmp_path, lab02=lab02)
+    obs = VoyagerISS.from_file(image)
+    assert frame_matrix(obs) == pytest.approx(camera_matrix(CLOCK_COUNT))
+    assert not hasattr(obs, 'spacecraft_clock_stop_count')
 
 
 def test_from_file_parsed_label_without_a_path(tmp_path: pathlib.Path) -> None:
@@ -1293,6 +1436,26 @@ def test_from_file_vicar_if_scale_from_its_header() -> None:
     assert obs.if_scale == pytest.approx(1.e-4, rel=1.e-12)
 
 
+def test_from_file_calibrated_product_converts_its_data_to_i_over_f() -> None:
+    obs = VoyagerISS.from_file(GEOMED_VICAR, astrometry=True)
+    [calibration] = obs.calibrations
+    assert isinstance(calibration, oops.calibration.FlatCalib)
+    assert calibration.name == 'I/F'
+    i_over_f = float(calibration.extended_from_dn(250., (0, 0)).vals)
+    assert i_over_f == pytest.approx(0.025, rel=1.e-12)
+
+
+def test_from_file_raw_product_has_no_calibration() -> None:
+    obs = VoyagerISS.from_file(RAW_LABEL.with_suffix('.IMG'), astrometry=True)
+    assert obs.calibrations == []
+
+
+def test_from_file_calibrations_override_the_i_over_f() -> None:
+    calibration = oops.calibration.FlatCalib('DN', 1.)
+    obs = VoyagerISS.from_file(GEOMED_VICAR, astrometry=True, calibrations=[calibration])
+    assert obs.calibrations == [calibration]
+
+
 def test_from_file_raw_vicar_has_no_if_scale() -> None:
     obs = VoyagerISS.from_file(RAW_LABEL.with_suffix('.IMG'), astrometry=True)
     assert not hasattr(obs, 'if_scale')
@@ -1408,12 +1571,14 @@ def _strip_objects(text: str, names: tuple[str, ...]) -> str:
 
 def _write_vicar(directory: pathlib.Path, *, name: str = 'C3450201.IMG',
                  label3: str | None = None, lab02: str = _LAB02,
-                 lab03: str = _LAB03, lab05: str = _LAB05) -> pathlib.Path:
+                 lab03: str = _LAB03, lab04: str = _LAB04,
+                 lab05: str = _LAB05) -> pathlib.Path:
     """Write a small Voyager VICAR image with no PDS3 label; return its path. The header
-    holds LABEL3 if `label3` is given, and the given LAB02, LAB03 and LAB05."""
+    holds LABEL3 if `label3` is given, and the given LAB02, LAB03, LAB04 and LAB05."""
 
     vic = vicar.VicarImage.from_array(np.arange(64, dtype='uint8').reshape(8, 8))
-    for (key, value) in {'LAB02': lab02, 'LAB03': lab03, 'LAB05': lab05}.items():
+    for (key, value) in {'LAB02': lab02, 'LAB03': lab03, 'LAB04': lab04,
+                         'LAB05': lab05}.items():
         vic[key] = value
     if label3 is not None:
         vic['LABEL3'] = label3
@@ -1658,22 +1823,117 @@ def test_from_index_keeps_them_with_a_custom_frame(fake_spice: FakeSpice) -> Non
     assert snapshots[9].frame is oops.Frame.J2000
 
 
-@pytest.mark.parametrize(('changes', 'item'), [
-    ({'STOP_TIME': 'UNK', 'IMAGE_TIME': 'UNK'}, 'STOP_TIME or IMAGE_TIME'),
-    ({'EXPOSURE_DURATION': -99.9999}, 'EXPOSURE_DURATION'),
-], ids=['time', 'exposure'])
-def test_from_index_row_without_a_required_item_is_a_format_error(
-        changes: dict[str, Any], item: str) -> None:
+def test_from_index_row_without_a_time_takes_it_from_the_clock() -> None:
     rows = VoyagerISS._read_index_rows(INDEX, supplement=SUPPLEMENT)
-    rows[9].update(changes)
+    rows[9].update({'STOP_TIME': 'UNK', 'IMAGE_TIME': 'UNK'})
+    obs = VoyagerISS.from_index(INDEX, row_dicts=rows)[9]
+    assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
+    assert obs.time_from_sclk is True
+
+
+def _index_with_exposure(directory: pathlib.Path, field: str) -> pathlib.Path:
+    """Copies of the test index and supplement in which the EXPOSURE_DURATION of
+    C3450201, the tenth row, is the nine characters `field`; the path of the index."""
+
+    for path in (INDEX, SUPPLEMENT):
+        shutil.copy(path, directory)
+        shutil.copy(path.with_suffix('.tab'), directory)
+    table = directory / INDEX.with_suffix('.tab').name
+    lines = table.read_bytes().split(b'\r\n')
+    assert lines[9][279:288] == b'   1.9200'
+    lines[9] = lines[9][:279] + field.encode() + lines[9][288:]
+    table.write_bytes(b'\r\n'.join(lines))
+    return directory / INDEX.name
+
+
+# The index labels give the exposure 7 bytes, though its field and its FORMAT, F9.4, have
+# 9, so a table reader that follows the label reads 0.0075 as 0.0
+def test_from_index_reads_every_digit_of_the_exposure(tmp_path: pathlib.Path) -> None:
+    obs = VoyagerISS.from_index(_index_with_exposure(tmp_path, '   0.0075'))[9]
+    assert obs.dict['EXPOSURE_DURATION'] == 0.0075
+    assert obs.texp == pytest.approx(0.0075)
+
+
+def test_from_index_dispatch_reads_every_digit_of_the_exposure(
+        tmp_path: pathlib.Path) -> None:
+    obs = oops.Host.from_index(_index_with_exposure(tmp_path, '   0.0075'))[9]
+    assert obs.dict['EXPOSURE_DURATION'] == 0.0075
+
+
+def test_from_index_null_exposure_is_a_format_error(tmp_path: pathlib.Path) -> None:
     with pytest.raises(oops.host.HostFormatError,
-                       match=rf'C34502XX/C3450201_RAW\.IMG has no {item}$'):
-        VoyagerISS.from_index(INDEX, row_dicts=rows)
+                       match=r'C34502XX/C3450201_RAW\.IMG has no EXPOSURE_DURATION$'):
+        VoyagerISS.from_index(_index_with_exposure(tmp_path, ' -99.9999'))
 
 
 def test_from_index_dict_is_json() -> None:
     obs = VoyagerISS.from_index(INDEX)[9]
     assert json.loads(json.dumps(obs.dict)) == obs.dict
+
+
+def test_from_index_dict_has_no_masks() -> None:
+    obs = VoyagerISS.from_index(INDEX)[9]
+    assert [key for key in obs.dict if key.endswith('_mask')] == []
+
+
+# The supplement is required, so None is refused rather than taken as "search for it"
+def test_from_index_refuses_no_supplement() -> None:
+    with pytest.raises(oops.host.HostIndexError,
+                       match=r'Voyager ISS raw image index needs its supplemental index: '
+                             r'.*VGISS_6109_raw_image_index_edited\.lbl'):
+        VoyagerISS.from_index(INDEX, supplement=None)
+
+
+def test_from_index_given_rows_need_no_supplement() -> None:
+    rows = VoyagerISS._read_index_rows(INDEX)
+    obs = VoyagerISS.from_index(INDEX, row_dicts=rows, supplement=None)
+    assert len(obs) == INDEX_ROWS
+    assert 'STOP_TIME' not in obs[9].dict
+
+
+def test_from_index_uses_a_given_label(monkeypatch: pytest.MonkeyPatch) -> None:
+    label = pdsparser.Pds3Label(INDEX.read_text().replace('VOLUME_ID                       '
+                                                          '= VGISS_6109',
+                                                          'VOLUME_ID = GIVEN'))
+    labels: list[Any] = []
+    read_index_rows = VoyagerISS._read_index_rows
+
+    def spy(filepath: Any, **kwargs: Any) -> Any:
+        labels.append(kwargs['label'])
+        return read_index_rows(filepath, **kwargs)
+
+    monkeypatch.setattr(VoyagerISS, '_read_index_rows', spy)
+    VoyagerISS.from_index(INDEX, label=label)
+    assert labels[0]['VOLUME_ID'] == 'GIVEN'
+
+
+def test_from_index_rejects_an_unknown_keyword() -> None:
+    with pytest.raises(oops.OopsTypeError,
+                       match=r"unexpected keyword argument for VoyagerISS\.from_index: "
+                             r"'supplementary'"):
+        VoyagerISS.from_index(INDEX, supplementary=None)
+
+
+@pytest.mark.parametrize('select', [0, slice(None), 'data'])
+def test_from_index_refuses_select(select: Any) -> None:
+    with pytest.raises(oops.OopsValueError,
+                       match='each row of a Voyager ISS raw image index is one '
+                             'observation'):
+        VoyagerISS.from_index(INDEX, select=select)
+
+
+def test_from_index_reports_an_invalid_label(tmp_path: pathlib.Path) -> None:
+    index = tmp_path / INDEX.name
+    index.write_text('PDS_VERSION_ID = PDS3\r\nRECORD_TYPE\r\nEND\r\n')
+    with pytest.raises(oops.host.PdsHostError,
+                       match=r'^cannot parse the PDS3 label .*'
+                             r'VGISS_6109_raw_image_index_edited\.lbl: missing "="'):
+        VoyagerISS.from_index(index, supplement=SUPPLEMENT)
+
+
+def test_from_index_with_an_invalid_parser_option() -> None:
+    with pytest.raises(oops.OopsValueError, match='unexpected keyword'):
+        VoyagerISS.from_index(INDEX, supplement=SUPPLEMENT, pds3_options={'bogus': 1})
 
 
 def test_from_index_dict_holds_python_numbers() -> None:

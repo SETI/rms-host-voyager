@@ -88,14 +88,26 @@ apply here to the stubs described below.
   neighboring image's record. `docs/pointing.rst` gives the evidence: fits of real images
   show that the record at the image's own count holds its pointing, and that `STOP_TIME`,
   not the count, is the shutter time.
-- So the time is `STOP_TIME`, else `IMAGE_TIME`, and never the clock count. The default
-  frame is an unregistered `Cmatrix` relative to J2000, from the record found by the clock
-  count (`_camera_frame()`, tolerance 20 ticks). Labels and VICAR headers give no clock
-  partition; `_Voyager.sclk_ticks()` picks the partition nearest `STOP_TIME`. A VICAR
-  header gives the count as its FDS image number in `LAB02`, which `_header_items()`
-  spells as a label does (`9096:16:001` for FDS `09096.16`); an index row without the
-  supplement gives only `IMAGE_NUMBER`, from which `_clock_count()` derives it. A frame
-  `timeshift` ("F") has no effect on the fixed matrix.
+- So the time is `STOP_TIME`, else `IMAGE_TIME`. Only when no source read gives either
+  does `_tstop()` take it from the clock count through the clock kernel (`sct2e`), and
+  the `time_from_sclk` subfield is then True (operator, 2026-11-19). The count's time
+  follows `STOP_TIME` by a median of 0.9 s (79% within 3 s) on the 76,635 raw images
+  that give both, and by whole FDS minutes for most of the rest, so such a time can be
+  minutes late. The default frame is an unregistered `Cmatrix` relative to J2000, from
+  the record found by the clock count (`_camera_frame()`, tolerance 20 ticks). Labels and
+  VICAR headers give no clock partition (the supplement does);
+  `_Voyager.sclk_ticks()` picks the partition nearest `STOP_TIME`, or, without a time,
+  nearest `EARTH_RECEIVED_TIME` (label, index, or the header's `LAB04` ERT), or, without
+  that either, the one partition that puts the count in one of
+  `_Voyager.IMAGING_PERIODS` (the archive's STOP_TIME span per spacecraft and encounter,
+  widened by 30 days; unique for all 76,635 timed raw images). The count recurs about
+  every six years, so the partition always needs a hint. A VICAR header gives the count
+  as its FDS image number in `LAB02`, which `_header_items()` spells as a label does
+  (`9096:16:001` for FDS `09096.16`); an index row without the supplement gives only
+  `IMAGE_NUMBER`, from which `_clock_count()` derives it, and failing both the count is
+  read from the image file's name (`C3450201` is FDS 34502.01), the only source for the
+  11 headers with FDS 00000.00. A frame `timeshift` ("F") has no effect on the fixed
+  matrix.
 - Missing SPICE data for the pointing raises `oops.OopsSpiceError` (rms-oops 0.5.0),
   built with `OopsSpiceError.from_spice_error()`: "no Voyager 1 ISS NAC pointing at
   <midtime> for <image file>: SPICE(CKINSUFFDATA)", the midtime after any cadence or
@@ -105,22 +117,35 @@ apply here to the stubs described below.
   `_NoPointingFrame`, which raises that error whenever it is evaluated. `from_file()`
   evaluates the frame at the midtime, so it raises at load time; `from_index()` does not,
   so it keeps the row. Neither checks anything when a `frame` override is given. An image
-  for which no source read gives the time, exposure, camera, spacecraft, mission phase
-  or (without a `frame` override) clock count raises `oops.host.HostFormatError`, naming
-  the item and the file, from both methods. Across the VGISS labels that is 17 images
-  with no time and 2,137 with no record, 1,090 of them in VGISS_8210; the index of
-  VGISS_6201 gives no exposure for C3940530, so `from_index()` raises for that volume.
+  for which no source read gives the exposure, camera, spacecraft, a time or a clock
+  count, or (without a `frame` override) a clock count raises
+  `oops.host.HostFormatError`, naming the items and the file, from both methods; a
+  missing `MISSION_PHASE_NAME` is computed from the time. Across the VGISS labels 2,137
+  images have no record, 1,090 of them in VGISS_8210. The index and the label of
+  C3940530 (VGISS_6201) give no exposure (only its VICAR header does, 5 ms), so
+  `from_index()` raises for that volume; that is left for the operator.
 - `from_index()` accepts only a `VGISS_xxxx_raw_image_index.lbl`, one row per RAW image,
   never the full `VGISS_xxxx_index.lbl` (one row per label: RAW, CLEANED, CALIB, GEOMED
   and the reseau and tiepoint tables), because OPUS archives only the raw images. The
   preexisting `VGISS_xxxx_supplemental_index.lbl` matches the raw image index row for
   row, so the two join through `oops.Host._read_index_rows()`. The default
-  `oops.Host.SUPPLEMENT` search would look for `..._raw_image_supplemental_index`, so the
-  host names the supplement itself by replacing `_raw_image_index` with
-  `_supplemental_index`. It does so even for given `row_dicts`, which rejects the rows of
-  a full index from `oops.Host.from_index()`, and joins the supplement by `VOLUME_NAME`
-  and `FILE_SPECIFICATION_NAME` into rows that lack `STOP_TIME`, as that dispatch passes
-  them. The supplement adds `START_TIME` and `STOP_TIME` with fractional
+  `oops.Host.SUPPLEMENT` search would look for `..._raw_image_supplemental_index`, so for
+  that default the host names the supplement itself by replacing `_raw_image_index` with
+  `_supplemental_index`. The supplement is required: `supplement=None` raises
+  `HostIndexError` unless `row_dicts` is given (then the rows are used as given).
+  `label=` goes to `_read_index_rows()`; `select` other than None raises
+  `OopsValueError` and any unknown keyword `OopsTypeError` (the from_index contract of
+  rms-oops #240, as rms-host-galileo has it). Every index label gives
+  `EXPOSURE_DURATION` `BYTES = 7` where the field and its `FORMAT` "F9.4" are 9 wide, so
+  `_index_label()` widens any column to its FORMAT width before the table is read
+  (1,597 of 76,652 rows lose digits otherwise, and the null -99.9999 reads -99.99).
+  Rows given without `STOP_TIME`, as `oops.Host.from_index()` passes them (read without
+  the supplement and the repair), are replaced by the host's own reading of the same
+  rows, matched by `VOLUME_NAME` and `FILE_SPECIFICATION_NAME`; naming the supplement
+  rejects the rows of a full index. The table reader's `_mask` entries are dropped; the
+  only declared null constants (exposure -99.9999, supplement `UNK` times) and the
+  placeholder `IMAGE_ID` `0000Z1+000`/`0000Z2+000` (34 rows) never stand for real
+  values. The supplement adds `START_TIME` and `STOP_TIME` with fractional
   seconds; the index's `IMAGE_TIME` has whole seconds. Each Snapshot's `filepath`,
   `basename` and `image_url` name the raw image file (`PRODUCT_ID`), never the label in
   `FILE_SPECIFICATION_NAME`, as a full path or URL: `_index_image_path()` maps an index
@@ -141,7 +166,8 @@ apply here to the stubs described below.
   a label input reads the label and, unless `astrometry=True`, the image file its
   `^IMAGE` names, found case-tolerantly. With `astrometry=True` a label input needs no
   image file. The metadata come from whatever was read. `_header_items()` converts the
-  VICAR header's `LAB02`, `LAB03` and `LAB05` fields and its tasks to the label's names
+  VICAR header's `LAB02`, `LAB03` and `LAB05` fields, the ERT of `LAB04` (which, holding
+  more, also stays in `dict` under its own name) and its tasks to the label's names
   and forms, leaving out any field filled with asterisks or garbled (an hour of 24 or
   more, a year outside 77-99, PICNO bytes, FDS 00000.00), and respells the target fields
   that no label uses through `_HEADER_TARGET_SPELLINGS` (`ENCELADU`, `1989N1`, ...; #15).
@@ -150,13 +176,18 @@ apply here to the stubs described below.
   every image; never a per-image test. Every item is "label" now. The comment above
   `_RESOLUTION` gives the evidence for each choice, and #14 lists the images on which
   the winner is wrong; keep them in step. A null (`UNK`, `N/A`, `NULL` in any case,
-  None, a list of nulls, and -99.9999 in the index) counts as missing. A subfield no
-  source gives is absent, never None (`if_scale` included). `dict` is the merged metadata
-  plus every other key of each source (`LABEL3`, ...), but never `LAB02`, `LAB03` or
-  `LAB05`, whose fields it holds under PDS3 names. `label_dict` is the label (parsed by
-  `from_file()` with `sources=False` unless `pds3_options` says otherwise, though a label
-  that `oops.Host.from_file()` parsed arrives with `sources=True` and keeps its
-  `*_source` keys; times as the parser's ISO strings, sets as lists, no END) and
+  None, a list of nulls, -99.9999 in the index, and the `IMAGE_ID` placeholder
+  `0000Zn+000`) counts as missing. A subfield no source gives is absent, never None
+  (`if_scale` included). `calibrations` is `[FlatCalib('I/F', if_scale)]` when
+  `if_scale` is present, else empty (it matches the label's REFLECTANCE_SCALING_FACTOR,
+  which the rms-oops host read, except for the 3.345 factor on Voyager 1 Saturn).
+  `dict` is the merged metadata plus every other key of each source (`LABEL3`, ...), but
+  never `LAB02`, `LAB03` or `LAB05`, whose fields it holds under PDS3 names.
+  `label_dict` is the label's own keywords (`from_file()` always parses with
+  `sources=False`, and `_plain_label_dict()` drops every lower-case parser entry, such as
+  `_fmt`, `_unit`, `^IMAGE_offset`, `objects` and the `_source` keys of a label that
+  `oops.Host.from_file()` parsed; times as the parser's ISO strings, sets as lists, no
+  END) and
   `header_dict` the header (`as_dict(unique=True)`, a repeated parameter keyed
   `TASK[0]`, `TASK[1]`, ...), each only when read; all three are JSON. `spacecraft`, the
   int 1 or 2, is how a consumer tells Voyager 1 from Voyager 2. Consumers read the
@@ -180,8 +211,8 @@ apply here to the stubs described below.
   the keyword; `from_file()` then parses the label again with "strict", then "loose",
   also after a `ValueError` (an hour of 24), and raises `PdsHostError` naming the label
   if all fail. The generic `oops.Host.from_file()` parses the label itself before it
-  reaches the host, so it still fails on those labels, and its default `sources=True`
-  reaches the host's `label_dict`; those fixes belong in rms-oops or pdsparser.
+  reaches the host, so it still fails on those labels; that fix belongs in rms-oops or
+  pdsparser.
 - The labels of the RESLOC and GEOMA tables have no `^IMAGE` and raise `PdsHostError`;
   their VICAR files (`TYPE='TABULAR'`) raise `VicarHostError`, as does an image file cut
   short. Parsed content of another host raises `WrongHostError` (#17).
@@ -189,7 +220,8 @@ apply here to the stubs described below.
   `INSTRUMENT_ID` (`ISSN`/`ISSW`). `IMAGE_TIME` and `STOP_TIME` are the shutter close, and
   `EXPOSURE_DURATION` is in seconds in a label but milliseconds in the VICAR header. The
   index of VGISS_6201 gives the null exposure -99.9999 for one dark frame, C3940530, whose
-  label gives "UNK" for its exposure and time.
+  label gives "UNK" for its exposure and time; 17 raw images (9 in VGISS_6101, 8 in
+  VGISS_6201) have no time in either file and take it from the clock.
 - The product type decides the FOV: `GEOMETRICALLY_CORRECTED_IMAGE` is 1000x1000 and
   undistorted, every other product 800x800 (raw geometry). A VICAR header has no
   `PRODUCT_TYPE`; `_header_items()` infers it from the VICAR tasks (`GEOMA` means GEOMED).
