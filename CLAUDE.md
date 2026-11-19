@@ -96,7 +96,9 @@ apply here to the stubs described below.
   supplement gives only `IMAGE_NUMBER`, from which `_clock_count()` derives it. A frame
   `timeshift` ("F") has no effect on the fixed matrix.
 - An image with no record (without a `frame` override) raises `_UnusableImageError`, a
-  `HostError`, from `from_file()`. Its cause is the SPICE exception and its message ends
+  `HostError`, from `from_file()`, under either cspyce error action ("EXCEPTION" raises
+  `ValueError` or `OSError` subclasses, "RUNTIME" raises `RuntimeError`, as in
+  `_Voyager.sclk_ticks()`). Its cause is the SPICE exception and its message ends
   with the SPICE short code, as in `...: SPICE(CKINSUFFDATA)`, which is how SpinDoctor
   tells missing SPICE data from other failures. An image for which no source read gives
   the time, exposure, camera, spacecraft, mission phase or (without a `frame` override)

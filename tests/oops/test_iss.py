@@ -350,6 +350,20 @@ def test_missing_record_without_a_spice_code(monkeypatch: pytest.MonkeyPatch) ->
                                f'{CLOCK_COUNT}')
 
 
+def test_missing_record_under_the_runtime_error_action(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """Under cspyce's "RUNTIME" error action, SPICE raises RuntimeError instead."""
+
+    def ckgp(*args: Any) -> None:
+        raise RuntimeError('SPICE(CKINSUFFDATA) -- ckgp -- insufficient C kernel data')
+
+    monkeypatch.setattr(iss.cspyce, 'ckgp', ckgp)
+    with pytest.raises(oops.host.HostError) as info:
+        snapshot()
+    assert str(info.value) == ('no Voyager 1 scan platform pointing for clock count '
+                               f'{CLOCK_COUNT}: SPICE(CKINSUFFDATA)')
+
+
 def test_custom_frame_skips_the_c_kernels(fake_spice: FakeSpice,
                                           fake_spicedb: FakeSpiceDB) -> None:
     fake_spice.missing.add(fake_scencd(-31, f'2/{CLOCK_COUNT}'))

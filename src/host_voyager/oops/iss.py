@@ -1063,7 +1063,8 @@ class VoyagerISS(oops.Host):
             ticks = _Voyager.sclk_ticks(vgr, count, partition, near=tstop)
             (j2000_to_platform, _) = cspyce.ckgp(platform_id, ticks, _TICK_TOLERANCE,
                                                  'J2000')
-        except (ValueError, LookupError, OSError) as err:
+        # cspyce raises RuntimeError instead under its "RUNTIME" error action
+        except (ValueError, LookupError, OSError, RuntimeError) as err:
             code = _SPICE_ERROR_CODE.search(str(err))
             suffix = f': {code[0]}' if code else ''
             raise _UnusableImageError(f'no Voyager {vgr} scan platform pointing for '
