@@ -255,9 +255,10 @@ _RESOLUTION = {
     'IMAGE_TIME'                 : _prefer_label,
     'STOP_TIME'                  : _prefer_label,
 
-    # 1,620 differ: for 1,506 the label's value is the header's truncated to 0.01 s, such
-    # as 0.04 s for 45 ms (C2037439), so the header's is used; 113 differ by more than
-    # 0.1 s, mostly long exposures of 96 or 192 s for which the header gives 5 ms (#14)
+    # About 910 differ. For about 800, all in VGISS_5xxx, the label's value is the
+    # header's truncated to 0.01 s, such as 0.04 s for 45 ms (C2037439), so the header's
+    # is used; 112 differ by more than 0.1 s, mostly long exposures of 96 or 192 s for
+    # which the header gives 5 ms (#14)
     'EXPOSURE_DURATION'          : _prefer_untruncated_exposure,
 
     # 5 differ, such as C1984746, ORANGE in the label and VIOLET in the header (#14)
