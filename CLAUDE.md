@@ -121,8 +121,13 @@ apply here to the stubs described below.
   a full index from `oops.Host.from_index()`, and joins the supplement by `VOLUME_NAME`
   and `FILE_SPECIFICATION_NAME` into rows that lack `STOP_TIME`, as that dispatch passes
   them. The supplement adds `START_TIME` and `STOP_TIME` with fractional
-  seconds; the index's `IMAGE_TIME` has whole seconds. Each Snapshot's `filepath` names
-  the raw image file (`PRODUCT_ID`), never the label in `FILE_SPECIFICATION_NAME`.
+  seconds; the index's `IMAGE_TIME` has whole seconds. Each Snapshot's `filepath`,
+  `basename` and `image_url` name the raw image file (`PRODUCT_ID`), never the label in
+  `FILE_SPECIFICATION_NAME`, as a full path or URL: `_index_image_path()` maps an index
+  in `<holdings>/metadata/VGISS_6xxx/VGISS_6109/` to the volume
+  `<holdings>/volumes/VGISS_6xxx/VGISS_6109/`, and an index anywhere else to the
+  directory `VOLUME_NAME` beside it. `abspath` is present only for a local image file or
+  a remote one already in the cache.
 - VGISS indexes name the volume in `VOLUME_NAME`, not `VOLUME_ID`, and the camera in
   `INSTRUMENT_NAME` ("NARROW ANGLE CAMERA" or "WIDE ANGLE CAMERA"). The index label itself
   identifies no host or instrument, so detection relies on `_detect_in_row()`.

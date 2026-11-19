@@ -1497,10 +1497,48 @@ def test_from_index_merges_the_supplement() -> None:
     assert obs.dict['SPACECRAFT_CLOCK_PARTITION_NUMBER'] == 2
 
 
-def test_from_index_names_the_image_file() -> None:
+def test_from_index_names_the_image_file_beside_the_index() -> None:
+    """An index outside the holdings layout has its volume directory beside it."""
+
     obs = VoyagerISS.from_index(INDEX)[9]
-    assert obs.filepath == 'VGISS_6109/DATA/C34502XX/C3450201_RAW.IMG'
+    image = INDEX.parent / 'VGISS_6109/DATA/C34502XX/C3450201_RAW.IMG'
+    assert obs.filepath == FCPath(image)
     assert obs.basename == 'C3450201_RAW.IMG'
+    assert obs.abspath == image.resolve()
+    assert obs.image_url == FCPath(image).absolute().as_posix()
+
+
+def _holdings_index(holdings: pathlib.Path) -> pathlib.Path:
+    """Copies of the test index and supplement where the holdings keep them; the path
+    of the index."""
+
+    directory = holdings / 'metadata/VGISS_6xxx/VGISS_6109'
+    directory.mkdir(parents=True)
+    for path in (INDEX, SUPPLEMENT):
+        shutil.copy(path, directory)
+        shutil.copy(path.with_suffix('.tab'), directory)
+    return directory / INDEX.name
+
+
+def test_from_index_names_the_image_file_in_the_volumes_tree(
+        tmp_path: pathlib.Path) -> None:
+    obs = VoyagerISS.from_index(_holdings_index(tmp_path))[9]
+    image = tmp_path / 'volumes/VGISS_6xxx/VGISS_6109/DATA/C34502XX/C3450201_RAW.IMG'
+    assert obs.filepath == FCPath(image)
+    assert obs.basename == 'C3450201_RAW.IMG'
+    assert obs.abspath == image.resolve()
+
+
+def test_from_index_remote_image_file_has_a_url_and_no_abspath() -> None:
+    index = FCPath('https://pds-rings.seti.org/holdings/metadata/VGISS_6xxx/VGISS_6109/'
+                   'VGISS_6109_raw_image_index.lbl')
+    rows = VoyagerISS._read_index_rows(INDEX, supplement=SUPPLEMENT)
+    obs = VoyagerISS.from_index(index, row_dicts=rows, supplement=SUPPLEMENT)[9]
+    url = ('https://pds-rings.seti.org/holdings/volumes/VGISS_6xxx/VGISS_6109/DATA/'
+           'C34502XX/C3450201_RAW.IMG')
+    assert obs.image_url == url
+    assert str(obs.filepath) == url
+    assert not hasattr(obs, 'abspath')
 
 
 def test_from_index_consumer_subfields() -> None:
@@ -1609,9 +1647,9 @@ def test_from_index_keeps_images_without_a_record(fake_spice: FakeSpice) -> None
     obs = snapshots[9]
     with pytest.raises(oops.OopsSpiceError) as info:
         obs.frame.transform_at_time(obs.midtime)
+    image = FCPath(INDEX.parent / 'VGISS_6109/DATA/C34502XX/C3450201_RAW.IMG')
     assert str(info.value) == (f'no Voyager 1 ISS NAC pointing at {MIDTIME} for '
-                               'VGISS_6109/DATA/C34502XX/C3450201_RAW.IMG: '
-                               'SPICE(CKINSUFFDATA)')
+                               f'{image}: SPICE(CKINSUFFDATA)')
 
 
 def test_from_index_keeps_them_with_a_custom_frame(fake_spice: FakeSpice) -> None:

@@ -62,6 +62,11 @@ _PDS3_METHODS = ('fast', 'strict', 'loose')
 # The columns that identify the same image in a raw image index and its supplement
 _INDEX_KEYS = ['VOLUME_NAME', 'FILE_SPECIFICATION_NAME']
 
+# The holdings of the PDS Ring-Moon Systems Node keep the indexes of a volume in
+# metadata/<series>/<volume>/ and the volume itself in volumes/<series>/<volume>/
+_METADATA_DIR = 'metadata'
+_VOLUMES_DIR = 'volumes'
+
 # Target name as found in a PDS label or index -> the oops body name
 _TARGET_NAME_REPAIRS = {
     'J RINGS'  : 'JUPITER_RING_PLANE',
@@ -912,15 +917,21 @@ class VoyagerISS(oops.Host):
         Returns:
             list[Snapshot]: One raw 800x800 observation per row of the index, each with
             subfields `dict`, `host`, `instrument`, `detector`, `planet`, `spacecraft`,
-            `spice_kernels`, `filepath`, `basename`, `spice_to_frame`,
+            `spice_kernels`, `filepath`, `basename`, `image_url`, `spice_to_frame`,
             `spice_frame_name` and `spice_frame_id` inserted, and `filter`,
-            `label_target`, `spacecraft_clock_start_count` and
-            `spacecraft_clock_stop_count` when the row gives them, as described for
-            :meth:`from_file`. `dict` is the row, merged with its row of the supplement,
-            without the columns whose values are null, and with each value a Python
-            str, int, float or bool. `filepath` names the raw image file: the
-            VOLUME_NAME, the directory of the FILE_SPECIFICATION_NAME and the
-            PRODUCT_ID joined by slashes. Every row gives a Snapshot. The pointing is
+            `label_target`, `spacecraft_clock_start_count`,
+            `spacecraft_clock_stop_count` and `abspath` when available, as described
+            for :meth:`from_file`. `dict` is the row, merged with its row of the
+            supplement, without the columns whose values are null, and with each value
+            a Python str, int, float or bool. `filepath`, `basename` and `image_url`
+            name the raw image file, PRODUCT_ID, in the directory of the
+            FILE_SPECIFICATION_NAME within the volume VOLUME_NAME, which is found from
+            the location of `filepath`: for an index where the PDS Ring-Moon Systems
+            Node holdings keep it, "<holdings>/metadata/VGISS_6xxx/VGISS_6109/", the
+            volume is "<holdings>/volumes/VGISS_6xxx/VGISS_6109"; for an index anywhere
+            else, it is the directory VOLUME_NAME beside the index. `abspath` is
+            present only if the image file is local or a remote one is already in the
+            local cache. Every row gives a Snapshot. The pointing is
             not checked: if `frame` is not given and the SPICE kernels cannot supply an
             image's pointing, evaluating its frame raises :class:`oops.OopsSpiceError`,
             as :meth:`from_file` describes.
@@ -976,15 +987,40 @@ class VoyagerISS(oops.Host):
         snapshots = []
         for row_dict in row_dicts:
             row_dict = _plain_row(row_dict)
-            directory = row_dict['FILE_SPECIFICATION_NAME'].rpartition('/')[0]
-            fpath = '/'.join([row_dict['VOLUME_NAME'], directory,
-                              row_dict['PRODUCT_ID']])
+            image = VoyagerISS._index_image_path(filepath, row_dict)
+            fetched = image.is_local() or pathlib.Path(image.get_local_path()).exists()
             snapshots.append(VoyagerISS._make_snapshot(
-                _without_nulls(row_dict), filepath=fpath,
+                _without_nulls(row_dict), filepath=image, fetched=fetched,
                 return_all_planets=return_all_planets, check_pointing=False,
                 overrides=overrides))
 
         return snapshots
+
+    @staticmethod
+    def _index_image_path(index, row_dict):
+        """The image file that a row of a raw image index describes.
+
+        Parameters:
+            index (FCPath): The path to the label of the raw image index.
+            row_dict (dict[str, Any]): The row.
+
+        Returns:
+            FCPath: The raw image file, PRODUCT_ID, in the directory of the row's
+            FILE_SPECIFICATION_NAME within its volume, VOLUME_NAME. The volume is found
+            from the location of the index: for an index where the PDS Ring-Moon Systems
+            Node holdings keep it, "<holdings>/metadata/VGISS_6xxx/VGISS_6109/", the
+            volume is "<holdings>/volumes/VGISS_6xxx/VGISS_6109"; for an index anywhere
+            else, it is the directory VOLUME_NAME beside the index.
+        """
+
+        directory = row_dict['FILE_SPECIFICATION_NAME'].rpartition('/')[0]
+        series_dir = index.parent.parent
+        if series_dir.parent.name == _METADATA_DIR:
+            volume = (series_dir.parent.parent / _VOLUMES_DIR / series_dir.name
+                      / row_dict['VOLUME_NAME'])
+        else:
+            volume = index.parent / row_dict['VOLUME_NAME']
+        return volume / directory / row_dict['PRODUCT_ID']
 
     @staticmethod
     def _supplement_path(filepath, pds3_options):
@@ -1054,15 +1090,14 @@ class VoyagerISS(oops.Host):
         Parameters:
             dict_ (dict): The metadata merged from the PDS3 label and the VICAR header, or
                 an index row, in either case without null values.
-            filepath (FCPath | str | None): The path to the image file, or for an index
-                row, the VOLUME_NAME, directory, and PRODUCT_ID joined by slashes; None
-                if it is not known.
+            filepath (FCPath | str | None): The path to the image file; None if it is
+                not known.
             data (numpy.ndarray, optional): The image array; None to omit the `data`
                 subfield.
             sources (dict[str, Any], optional): The values of the subfields `label_dict`,
                 `header_dict` and `if_scale`, each None if it is absent.
-            fetched (bool, optional): False if the image file was not read, so that a
-                remote image file is not in the local cache.
+            fetched (bool, optional): False if a remote image file is not in the local
+                cache, because it was not read.
             return_all_planets (bool, optional): Include kernels for all planets, not just
                 the planet of the encounter.
             check_pointing (bool): True to require, if `frame` is not overridden, that
@@ -1171,11 +1206,10 @@ class VoyagerISS(oops.Host):
 
         Parameters:
             params (dict): The Snapshot parameters, modified in place.
-            filepath (FCPath | str | None): The path to the image file, or for an index
-                row, its path as a string; None if it is not known, in which case no
-                path parameters are set.
-            fetched (bool): False if the image file was not read; `abspath` is then left
-                out for a remote file, which would name a file not in the local cache.
+            filepath (FCPath | str | None): The path to the image file; None if it is
+                not known, in which case no path parameters are set.
+            fetched (bool): False if a remote image file is not in the local cache;
+                `abspath`, which would name the missing cache file, is then left out.
             overrides (dict[str, Any]): The standard overrides.
         """
 

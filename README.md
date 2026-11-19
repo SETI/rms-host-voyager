@@ -102,7 +102,10 @@ snapshots = VoyagerISS.from_index('VGISS_6109_raw_image_index.lbl')
   `Snapshot`, whichever file was read.
 - `VoyagerISS.from_index()` makes one `Snapshot` for each row of a raw image index,
   merging in the columns of the supplemental index. The volume index, which lists every
-  product, is not accepted.
+  product, is not accepted. The file names in each `Snapshot` are those of the raw image
+  file, as a full path or URL: for an index in the holdings' `metadata` tree, in the
+  matching volume of the `volumes` tree; for an index elsewhere, in the volume directory
+  beside it.
 - The time of an image is its STOP_TIME. Its pointing comes from its own record in the
   scan platform C kernels, found by its spacecraft clock count rather than by its time,
   because the records are stamped at the count and the count can fall minutes after the
