@@ -103,8 +103,9 @@ What the host does
   :exc:`oops.OopsSpiceError` for an image with no record unless the `frame` override is
   given. :meth:`~host_voyager.oops.iss.VoyagerISS.from_index` raises the same
   :exc:`oops.host.HostFormatError` for a row with no time, but does not check the
-  record: it returns the Snapshot of an image with no record, and evaluating that
-  Snapshot's frame raises :exc:`oops.OopsSpiceError`. Of the 76,652 VGISS raw images,
+  record: it returns the Snapshot of an image with no record, and unless the `frame`
+  override is given, evaluating that Snapshot's frame raises
+  :exc:`oops.OopsSpiceError`. Of the 76,652 VGISS raw images,
   the labels give no time for 17, and 2,137 have no record, 1,090 of them in VGISS_8210.
 
 Because the frame is a fixed matrix, the `navigation` and `tracker` overrides work as

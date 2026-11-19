@@ -137,7 +137,9 @@ _VICAR_IMAGE_TYPE = 'IMAGE'
 
 # The line of a calibrated product's VICAR header that gives its I/F scale, as in
 #   LABEL3='FOR (I/F)*10000., MULTIPLY DN VALUE BY               1.00000'
-_IF_LINE = re.compile(r'FOR \(I/F\)\*10000\., MULTIPLY DN VALUE BY\s+(?P<scale>\S+)')
+# A factor that is not a number, such as N/A, is missing.
+_IF_LINE = re.compile(r'FOR \(I/F\)\*10000\., MULTIPLY DN VALUE BY\s+'
+                      r'(?P<scale>[-+]?(\d+\.?\d*|\.\d+)([Ee][-+]?\d+)?)\s*$')
 _IF_LINE_UNITS = 10000.
 
 # The PDS3 null constants that a label or index gives for an unknown value, and the
@@ -153,6 +155,9 @@ _SCET_CENTURY = 1900
 
 # A SCET, which is to the second, in the form in which the PDS3 label parser gives a time
 _ISO_FORMAT = '%Y-%m-%dT%H:%M:%S.000'
+
+# The suffix of the entries that the PDS3 label parser adds with its `_details` option
+_DETAIL_SUFFIX = '_detail'
 
 
 def _filter_name(text):
@@ -211,11 +216,14 @@ def _plain_label_dict(dict_):
         dict[str, Any]: A copy in which each date or time is its ISO 8601 string as the
         parser formats it (its "_fmt" entry, such as "1980-10-29T05:57:22.000"), each set
         is its ordered list (its "_list" entry), each OBJECT is converted the same way,
-        and the keys whose values are None, such as END, are left out.
+        and the keys whose values are None, such as END, are left out, as are the
+        parser objects of its debugging option `_details` (the "_detail" entries).
     """
 
     plain = {}
     for (key, value) in dict_.items():
+        if key.endswith(_DETAIL_SUFFIX):
+            continue
         if isinstance(value, (dt.date, dt.time)):       # datetime is a date
             plain[key] = dict_[key + '_fmt']
         elif isinstance(value, set):
@@ -279,6 +287,8 @@ def _scet(lab02):
         scet = dt.datetime.strptime(f'{year}.{match["doy"]} {match["hms"]}',
                                     '%Y.%j %H:%M:%S')
     except ValueError:      # an hour of 24 or more, a day of 367 or more, ...
+        return None
+    if scet.year != year:   # day 366 of a common year rolls into the next
         return None
     return scet.strftime(_ISO_FORMAT)
 
@@ -817,7 +827,7 @@ class VoyagerISS(oops.Host):
         Returns:
             float | None: The factor from the header line "FOR (I/F)*10000., MULTIPLY DN
             VALUE BY x", which FICOR77 writes as LABEL3, so x / 10000; None if the
-            header has no such line.
+            header has no such line, or its x is not a number, such as N/A.
         """
 
         for value in header.as_dict(unique=False).values():

@@ -148,8 +148,10 @@ apply here to the stubs described below.
   None, a list of nulls, and -99.9999 in the index) counts as missing. A subfield no
   source gives is absent, never None (`if_scale` included). `dict` is the merged metadata
   plus every other key of each source (`LABEL3`, ...), but never `LAB02`, `LAB03` or
-  `LAB05`, whose fields it holds under PDS3 names. `label_dict` is the label (built with
-  `sources=False`, times as the parser's ISO strings, sets as lists, no END) and
+  `LAB05`, whose fields it holds under PDS3 names. `label_dict` is the label (parsed by
+  `from_file()` with `sources=False` unless `pds3_options` says otherwise, though a label
+  that `oops.Host.from_file()` parsed arrives with `sources=True` and keeps its
+  `*_source` keys; times as the parser's ISO strings, sets as lists, no END) and
   `header_dict` the header (`as_dict(unique=True)`, a repeated parameter keyed
   `TASK[0]`, `TASK[1]`, ...), each only when read; all three are JSON. `spacecraft`, the
   int 1 or 2, is how a consumer tells Voyager 1 from Voyager 2. Consumers read the

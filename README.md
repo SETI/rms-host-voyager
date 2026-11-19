@@ -86,8 +86,9 @@ snapshots = VoyagerISS.from_index('VGISS_6109_raw_image_index.lbl')
 - Where the label and the VICAR header disagree, the label's value is used for every
   item, the same way for every image. Fields that the VICAR header fills with asterisks
   or garbles, such as an unknown time, count as missing, and a value missing from the
-  label is taken from the header. Both sources stay available, as `label_dict` and
-  `header_dict`, and `dict` holds the merged metadata. All three can be written as JSON:
+  label is taken from the header. `dict` holds the merged metadata, and each source read
+  stays available: `label_dict` when the label was read, `header_dict` when the image
+  file was read. All three can be written as JSON:
   times are ISO 8601 strings such as `1980-10-29T05:57:22.000`. `header_dict` keeps
   every VICAR parameter; one that occurs more than once, such as the TASK of each
   processing step, is keyed `TASK[0]`, `TASK[1]`, and so on.

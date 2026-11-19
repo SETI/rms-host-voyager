@@ -680,6 +680,8 @@ def test_header_clock_count_is_spelled_as_the_label_spells_it() -> None:
      ['IMAGE_TIME', 'STOP_TIME', 'MISSION_PHASE_NAME']),
     ('LAB02', 'SCET 80.303 05:57:22', 'SCET 08.272 07:05:04',
      ['IMAGE_TIME', 'STOP_TIME', 'MISSION_PHASE_NAME']),
+    ('LAB02', 'SCET 80.303 05:57:22', 'SCET 81.366 05:57:22',
+     ['IMAGE_TIME', 'STOP_TIME', 'MISSION_PHASE_NAME']),
     ('LAB02', 'PICNO 0469S1-015', 'PICNO **********', ['IMAGE_ID']),
     ('LAB02', 'PICNO 0469S1-015', 'PICNO 0000Z1+000', ['IMAGE_ID']),
     ('LAB02', 'FDS 34502.01', 'FDS 0.00    ',
@@ -689,9 +691,9 @@ def test_header_clock_count_is_spelled_as_the_label_spells_it() -> None:
     ('LAB03', 'EXP    1920.0 MSEC', 'EXP    ****** MSEC', ['EXPOSURE_DURATION']),
     ('LAB03', 'FILT 1(VIOLET)', 'FILT *(******)', ['FILTER_NAME', 'FILTER_NUMBER']),
     ('LAB05', 'SATURN     ', '           ', ['TARGET_NAME']),
-], ids=['scet-asterisks', 'scet-hour-34', 'scet-year-08', 'picno-asterisks',
-        'picno-placeholder', 'fds-short', 'fds-zero', 'exposure', 'filter',
-        'target-blank'])
+], ids=['scet-asterisks', 'scet-hour-34', 'scet-year-08', 'scet-day-366-of-1981',
+        'picno-asterisks', 'picno-placeholder', 'fds-short', 'fds-zero', 'exposure',
+        'filter', 'target-blank'])
 def test_header_leaves_out_a_garbled_field(line: str, old: str, new: str,
                                            items: list[str]) -> None:
     lines = {'LAB02': _LAB02, 'LAB03': _LAB03, 'LAB05': _LAB05}
@@ -699,6 +701,11 @@ def test_header_leaves_out_a_garbled_field(line: str, old: str, new: str,
     found = _header_items(**{line: lines[line].replace(old, new)})
     assert [item for item in items if item in found] == []
     assert len(found) == 13 - len(items)
+
+
+def test_header_keeps_day_366_of_a_leap_year() -> None:
+    items = _header_items(LAB02=_LAB02.replace('SCET 80.303', 'SCET 80.366'))
+    assert items['STOP_TIME'] == '1980-12-31T05:57:22.000'
 
 
 def test_header_without_voyager_lines() -> None:
@@ -868,6 +875,17 @@ def test_from_file_header_dict_keeps_every_repeated_parameter() -> None:
     assert [obs.header_dict[f'TASK[{n}]'] for n in range(len(tasks))] == tasks
 
 
+@pytest.mark.parametrize(('key', 'value'), [
+    ('TASK[2]', 'RESSAR77'),
+    ('USER[4]', 'SHOWALTER'),
+    ('DAT_TIM[0]', 'Fri Sep  2 12:18:00 2005'),
+    ('LABEL3', 'FOR (I/F)*10000., MULTIPLY DN VALUE BY               1.00000'),
+])
+def test_from_file_header_dict_keys(key: str, value: str) -> None:
+    obs = VoyagerISS.from_file(GEOMED_VICAR, astrometry=True)
+    assert obs.header_dict[key] == value
+
+
 # The four inputs: the label or the image file, read in full or for astrometry
 INPUTS = ['label', 'label-astrometry', 'image', 'image-astrometry']
 
@@ -881,13 +899,41 @@ def _read_input(directory: pathlib.Path, input_: str, **kwargs: Any) -> Any:
                                 astrometry=input_.endswith('astrometry'))
 
 
-@pytest.mark.parametrize('input_', INPUTS)
-@pytest.mark.parametrize('name', ['dict', 'label_dict', 'header_dict'])
+# The metadata dictionaries that each input gives
+_DICTS = {
+    'label'           : ['dict', 'label_dict', 'header_dict'],
+    'label-astrometry': ['dict', 'label_dict'],
+    'image'           : ['dict', 'header_dict'],
+    'image-astrometry': ['dict', 'header_dict'],
+}
+
+
+@pytest.mark.parametrize(('input_', 'name'), [(input_, name)
+                                              for (input_, names) in _DICTS.items()
+                                              for name in names])
 def test_from_file_metadata_is_json(tmp_path: pathlib.Path, input_: str,
                                     name: str) -> None:
     obs = _read_input(tmp_path, input_)
-    value = getattr(obs, name, {})
+    value = getattr(obs, name)
     assert json.loads(json.dumps(value)) == value
+
+
+@pytest.mark.parametrize('input_', INPUTS)
+def test_from_file_gives_the_dictionaries_of_the_sources_read(tmp_path: pathlib.Path,
+                                                              input_: str) -> None:
+    obs = _read_input(tmp_path, input_)
+    names = ['dict', 'label_dict', 'header_dict']
+    assert [name for name in names if hasattr(obs, name)] == _DICTS[input_]
+
+
+def test_from_file_label_parsed_with_details_is_json(tmp_path: pathlib.Path) -> None:
+    """The parser's debugging "_detail" entries, which JSON cannot hold, are left out."""
+
+    (label, _image) = _write_label_and_image(tmp_path)
+    obs = VoyagerISS.from_file(label, astrometry=True,
+                               pds3_options={'method': 'strict', '_details': True})
+    assert json.loads(json.dumps(obs.label_dict)) == obs.label_dict
+    assert json.loads(json.dumps(obs.dict)) == obs.dict
 
 
 @pytest.mark.parametrize('input_', INPUTS)
@@ -1254,8 +1300,9 @@ def test_from_file_raw_vicar_has_no_if_scale() -> None:
 
 @pytest.mark.parametrize(('label3', 'if_scale'), [
     ('FOR (I/F)*10000., MULTIPLY DN VALUE BY               0.10000', 1.e-5),
+    ('FOR (I/F)*10000., MULTIPLY DN VALUE BY               N/A', None),
     (None, None),
-], ids=['calibrated', 'raw'])
+], ids=['calibrated', 'null-factor', 'raw'])
 def test_from_file_label_if_scale_from_the_image_header(tmp_path: pathlib.Path,
                                                         label3: str | None,
                                                         if_scale: float | None) -> None:

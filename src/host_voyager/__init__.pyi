@@ -37,16 +37,17 @@ class VoyagerISS(Host):
     # Without a `frame`, an image whose pointing the SPICE kernels cannot supply raises
     # oops.OopsSpiceError, "no Voyager 1 ISS NAC pointing at <midtime> for <image
     # file>: SPICE(CKINSUFFDATA)", whose cause is the SPICE exception. An image for which
-    # no source read gives the time, exposure, camera, spacecraft, mission phase or
-    # clock count raises oops.host.HostFormatError; a label that no parser method reads,
-    # or that names no IMAGE file, raises oops.host.PdsHostError; a VICAR file that
-    # cannot be read as an image raises oops.host.VicarHostError; another mission's file
-    # or parsed content raises oops.host.WrongHostError. Given the image file, only it
-    # is read; given a PDS3 label, the label and its image file are read and their
-    # metadata merged, except that with astrometry=True the label is read alone and the
-    # image file need not exist. A subfield that no source read gives, such as if_scale,
-    # is absent. The `spacecraft` subfield, the int 1 or 2, tells Voyager 1 from
-    # Voyager 2 on every input.
+    # no source read gives the time, exposure, camera, spacecraft, mission phase or,
+    # unless `frame` is given, clock count raises oops.host.HostFormatError; a label
+    # that no parser method reads, or that names no IMAGE file, raises
+    # oops.host.PdsHostError; a VICAR file that cannot be read as an image raises
+    # oops.host.VicarHostError; another mission's file or parsed content raises
+    # oops.host.WrongHostError. Given the image file, only it is read; given a PDS3
+    # label, the label and its image file are read and their metadata merged, except
+    # that with astrometry=True the label is read alone and the image file need not
+    # exist. A subfield that no source read gives, such as if_scale, is absent. The
+    # `spacecraft` subfield, the int 1 or 2, tells Voyager 1 from Voyager 2 on every
+    # input.
     @staticmethod
     def from_file(  # type: ignore[override]
         fileinfo: str | pathlib.Path | FCPath | Pds3Label | VicarLabel
