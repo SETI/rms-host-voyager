@@ -448,6 +448,17 @@ def test_missing_record_at_the_frame_shifted_time(fake_spice: FakeSpice) -> None
         snapshot(timeshift=(5., 'F'))
 
 
+@pytest.mark.usefixtures('body_path')
+def test_missing_record_with_a_tracker_at_the_midtime(fake_spice: FakeSpice) -> None:
+    """A tracking frame cannot be built on a frame without pointing, so the observation
+    keeps that frame and the error gives the midtime, not the tracker's epoch."""
+
+    fake_spice.missing.add(fake_scencd(-31, f'2/{CLOCK_COUNT}'))
+    with pytest.raises(oops.OopsSpiceError,
+                       match=r' at 1980-10-29T05:57:21\.040 for VGISS_6109/X\.IMG'):
+        snapshot(target='TITAN', tracker='start')
+
+
 def test_count_in_no_partition_is_a_spice_error() -> None:
     with pytest.raises(oops.OopsSpiceError) as info:
         snapshot(SPACECRAFT_CLOCK_PARTITION_NUMBER=1)
@@ -1159,6 +1170,17 @@ def test_from_file_label_dict_gives_sets_as_lists(tmp_path: pathlib.Path) -> Non
     obs = VoyagerISS.from_file(label, astrometry=True)
     assert obs.label_dict['NOTE'] == ['B', 'A']
     assert obs.dict['NOTE'] == ['B', 'A']
+
+
+def test_from_file_label_keeps_the_edit_mode_as_text(tmp_path: pathlib.Path) -> None:
+    """The quoted EDIT_MODE_ID "1:32", which the fast parser reads as a time, is the text
+    of the label."""
+
+    (label, _image) = _write_label_and_image(tmp_path)
+    label.write_text(label.read_text().replace('"1:1"', '"1:32"'))
+    obs = VoyagerISS.from_file(label, astrometry=True)
+    assert obs.label_dict['EDIT_MODE_ID'] == '1:32'
+    assert obs.dict['EDIT_MODE_ID'] == '1:32'
 
 
 def test_from_file_label_dict_gives_times_as_iso_strings(tmp_path: pathlib.Path) -> None:

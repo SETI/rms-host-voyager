@@ -274,6 +274,7 @@ def _plain_label_dict(dict_):
         whose name holds lower-case letters: "STOP_TIME_fmt", "STOP_TIME_day",
         "EXPOSURE_DURATION_unit", "^IMAGE_offset", "DESCRIPTION_unwrap", "objects", and
         the "_source", "_type" and "_detail" entries of the parser's options.
+        EDIT_MODE_ID is text, such as "1:32", even where the parser gives a time.
     """
 
     plain = {}
@@ -282,7 +283,14 @@ def _plain_label_dict(dict_):
         # `old_format` option of as_dict() recognizes them
         if key != key.upper():
             continue
-        if isinstance(value, (dt.date, dt.time)):       # datetime is a date
+        # The fast parser reads the quoted EDIT_MODE_ID "1:32" (472 raw images of the
+        # VGISS_8xxx volumes, each with four labels) as the time 01:32, where the strict
+        # parser, the index and the label give the text "1:32". Until the parser is
+        # fixed, the text is rebuilt from the time; "1:32" is the only edit mode in the
+        # VGISS indexes that looks like a time. SETI/rms-pdsparser#29
+        if key == 'EDIT_MODE_ID' and isinstance(value, dt.time):
+            plain[key] = f'{value.hour}:{value.minute:02d}'
+        elif isinstance(value, (dt.date, dt.time)):     # datetime is a date
             plain[key] = dict_[key + '_fmt']
         elif isinstance(value, set):
             plain[key] = dict_[key + '_list']
@@ -560,8 +568,8 @@ class VoyagerISS(oops.Host):
               header. A key whose value means unknown is left out, also inside an
               OBJECT such as IMAGE: a placeholder text ("UNK", "UNKNOWN", "N/A", "NULL",
               "NOT APPLICABLE", "---" or an empty string), None, such as the label's
-              END, or the
-              placeholder picture number "0000Z1+000" or "0000Z2+000" of IMAGE_ID.
+              END, or the placeholder picture number "0000Z1+000" or "0000Z2+000" of
+              IMAGE_ID.
               Times are ISO 8601 strings in the form "1980-10-29T05:57:22.000", sets are
               lists, and every value can be written as JSON.
             - `label_dict` is the PDS3 label as a dictionary of its own keywords, with
@@ -626,14 +634,14 @@ class VoyagerISS(oops.Host):
                 cannot convert the clock count, or cannot place it in one partition, with
                 a message of the form "no Voyager 1 clock time for FDS count
                 34502:01:001 for <image file>: <SPICE error code>"; or if `frame` is not
-                given and the SPICE kernels cannot
-                supply the image's pointing: the C kernels lack a record for its
-                spacecraft clock stop count, the clock kernel cannot encode the count, or
-                the frame kernel does not connect the scan platform to the camera. Its
-                message has the form "no Voyager 1 ISS NAC pointing at <midtime> for
-                <image file>: <SPICE error code>", in which the midtime is that of the
-                observation after any `cadence` or `timeshift` override; its cause is
-                the exception that SPICE raised.
+                given and the SPICE kernels cannot supply the image's pointing: the C
+                kernels lack a record for its spacecraft clock stop count, the clock
+                kernel cannot encode the count, or the frame kernel does not connect the
+                scan platform to the camera. Its message has the form "no Voyager 1 ISS
+                NAC pointing at <time> for <image file>: <SPICE error code>", in which
+                the time is that at which the Snapshot evaluates its frame: the midtime
+                after any `cadence` override, moved by any `timeshift`, once for "T" and
+                once more for "F"; its cause is the exception that SPICE raised.
             oops.host.HostFormatError: If no source read gives the spacecraft, the
                 camera or the exposure; neither a time nor a clock count; or, unless
                 `frame` is given, no spacecraft clock stop count. The message names the
@@ -766,7 +774,8 @@ class VoyagerISS(oops.Host):
         # VGISS_7205, in which the quoted value of NOTE starts on the next line, and the
         # strict parser rejects some that "loose" reads, so oops tries each later method
         # in turn. A VICAR file whose header or data cannot be read raises an error that
-        # names it (#17).
+        # names it (#17). The fast parser also reads the quoted EDIT_MODE_ID "1:32" as a
+        # time, which _plain_label_dict() turns back into the text. SETI/rms-pdsparser#29
         try:
             return VoyagerISS._read_fileinfo(fileinfo, formats='PV',
                                              astrometry=astrometry,
@@ -1338,18 +1347,19 @@ class VoyagerISS(oops.Host):
         if using_cks:
             params['frame'] = VoyagerISS._camera_frame(dict_, vgr, camera, tstop,
                                                        filepath, name)
-        ck_frame = params['frame']
-        pointing_time = oops.Host._pointing_time(params['cadence'], overrides)
 
         # This sets the path subfields of the image file too: `abspath` only if the file
         # is local or already in the local cache; oops never creates a directory here
         oops.Host._apply_overrides(params, filepath, **overrides)
 
-        # A frame without pointing raises OopsSpiceError when it is evaluated, here at the
-        # time at which the observation evaluates it, after any cadence or time shift
-        # override
+        # A frame without pointing raises OopsSpiceError when it is evaluated, so evaluate
+        # the frame as the observation will, after the overrides. The check of oops,
+        # oops.Host._check_spice_frame, is for a frame that reads the C kernels when it is
+        # evaluated; this one read them when it was built, at the image's own clock count,
+        # and given the SpiceErrorFrame the check would wrap its error in another one.
         if using_cks and check_pointing:
-            ck_frame.transform_at_time(pointing_time)
+            frame = oops.Frame.as_frame(params['frame'])
+            frame.wrt(oops.Frame.J2000).transform_at_time(params['cadence'].midtime)
 
         obs = oops.observation.Snapshot(('v', 'u'), **params)
         if data is not None:
@@ -1701,7 +1711,7 @@ class VoyagerISS(oops.Host):
 
         Returns:
             bool | None: True if DATA_SET_ID names the Voyager ISS images; False if it
-            names another data set; None if the label gives no DATA_SET_ID, so that the
+            names another data set; None if the label lacks DATA_SET_ID, so that the
             host is identified from the rows by :meth:`_detect_in_row`.
         """
 

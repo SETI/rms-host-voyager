@@ -36,12 +36,14 @@ __all__ = ['VoyagerISS']
 class VoyagerISS(Host):
     # The runtime names the first parameter `fileinfo`, where Host names it `filepath`.
     # Without a `frame`, an image whose pointing the SPICE kernels cannot supply raises
-    # oops.OopsSpiceError, "no Voyager 1 ISS NAC pointing at <midtime> for <image
-    # file>: SPICE(CKINSUFFDATA)", whose cause is the SPICE exception. An image for which
-    # no source read gives a time takes it from its clock count (time_from_sclk), and
-    # raises oops.OopsSpiceError if the clock kernel cannot convert the count. An image
-    # for which no source read gives the exposure, camera, spacecraft, a time or a clock
-    # count, or, unless `frame` is given, a clock count, raises
+    # oops.OopsSpiceError, "no Voyager 1 ISS NAC pointing at <time> for <image file>:
+    # SPICE(CKINSUFFDATA)", whose cause is the SPICE exception. The time is that at which
+    # the Snapshot evaluates its frame: the midtime after any cadence override, moved by
+    # any timeshift, once for "T" and once more for "F". An image for which no source
+    # read gives a time takes it from its clock count (time_from_sclk), and raises
+    # oops.OopsSpiceError if the clock kernel cannot convert the count. An image for
+    # which no source read gives the exposure, camera, spacecraft, a time or a clock
+    # count, or, unless `frame` is given, a clock stop count, raises
     # oops.host.HostFormatError; a label that no parser method reads, or that lacks an
     # IMAGE pointer, raises oops.host.PdsHostError; a VICAR file that cannot be read as an
     # image raises oops.host.VicarHostError; another mission's file or parsed content
@@ -72,13 +74,13 @@ class VoyagerISS(Host):
     METADATA_INDEX_EXAMPLE: str | None
     # Every row is one Snapshot. Only a raw image index of the Ring-Moon Systems Node
     # metadata is read; a volume's own index raises oops.host.HostIndexError before any
-    # file is read, and so does an index whose name lacks "_raw_image_index". The
-    # supplement is required: None raises oops.host.HostIndexError unless row_dicts is
-    # given. select must be None (oops.OopsValueError), and any other keyword raises
-    # oops.OopsTypeError. The call reads only the labels; the iterator reads the rows of
-    # the index and its supplement a few at a time, in step, and builds each row's
-    # Snapshot when it reaches the row. A row whose files differ between the two tables
-    # raises oops.host.HostIndexError at that row.
+    # file is read, and an index whose name lacks "_raw_image_index" raises it when the
+    # call is made. The supplement is required: None raises oops.host.HostIndexError
+    # unless row_dicts is given. select must be None (oops.OopsValueError), and any other
+    # keyword raises oops.OopsTypeError. The call reads only the labels; the iterator
+    # reads the rows of the index and its supplement a few at a time, in step, and builds
+    # each row's Snapshot when it reaches the row. A row whose files differ between the
+    # two tables raises oops.host.HostIndexError at that row.
     @staticmethod
     def from_index(
         filepath: str | pathlib.Path | FCPath, *,

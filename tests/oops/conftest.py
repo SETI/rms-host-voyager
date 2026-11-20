@@ -279,13 +279,18 @@ def fake_spice(monkeypatch: pytest.MonkeyPatch) -> FakeSpice:
     # one test could decide the ID that an identical one gets in a later test. Until oops
     # offers one helper that isolates all of this state, the copies stay here.
     # SETI/rms-oops#250
+    # The waypoint and wayframe pools are WeakValueDictionary objects, which dict() would
+    # read as keys() and then pool[key], raising KeyError if the collector freed an entry
+    # in between; items() reads each key with its value.
     for path_class in oops.Path._PATH_SUBCLASSES:
         if '_WAYPOINTS' in vars(path_class):
-            monkeypatch.setattr(path_class, '_WAYPOINTS', dict(path_class._WAYPOINTS))
+            monkeypatch.setattr(path_class, '_WAYPOINTS',
+                                dict(path_class._WAYPOINTS.items()))
     for frame_class in oops.Frame._FRAME_SUBCLASSES:
         for pool in ('_WAYFRAMES', '_FOR_NAME', '_FRAME_LOOKUP'):
             if pool in vars(frame_class):
-                monkeypatch.setattr(frame_class, pool, dict(getattr(frame_class, pool)))
+                monkeypatch.setattr(frame_class, pool,
+                                    dict(getattr(frame_class, pool).items()))
     return fake
 
 

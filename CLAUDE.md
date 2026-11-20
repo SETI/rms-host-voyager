@@ -95,9 +95,8 @@ apply here to the stubs described below.
   C3450201) after the true shutter close, `STOP_TIME`. A time lookup near `STOP_TIME`,
   whether `ckgp` at mid-exposure as in the rms-oops host or a `SpiceType1Frame`, returns a
   neighboring image's record. `docs/user_guide/user_guide_appendix_pointing.rst` gives
-  the evidence: fits of real images
-  show that the record at the image's own count holds its pointing, and that `STOP_TIME`,
-  not the count, is the shutter time.
+  the evidence: fits of real images show that the record at the image's own count holds
+  its pointing, and that `STOP_TIME`, not the count, is the shutter time.
 - So the time is `STOP_TIME`, else `IMAGE_TIME`. Only when no source read gives either
   does `_tstop()` take it from the clock count through the clock kernel (`sct2e`), and
   the `time_from_sclk` subfield is then True (operator, 2026-11-19). The count's time
@@ -121,27 +120,34 @@ apply here to the stubs described below.
   matrix.
 - Missing SPICE data for the pointing raises `oops.OopsSpiceError` (rms-oops 0.5.0),
   built with `OopsSpiceError.from_spice_error()`: "no Voyager 1 ISS NAC pointing at
-  <time> for <image file>: SPICE(CKINSUFFDATA)", the time being
-  `oops.Host._pointing_time()`, at which the observation evaluates its frame after any
-  cadence or timeshift override, and the SPICE exception its cause. The host has one
-  rule for cspyce failures, oops's: around `sclk_ticks()`, `ckgp` and `pxform`
-  (`_camera_frame()`) and around the clock conversion (`_tstop()`), it catches
+  <time> for <image file>: SPICE(CKINSUFFDATA)", and the SPICE exception is its cause.
+  The host has one rule for cspyce failures, oops's: around `sclk_ticks()`, `ckgp` and
+  `pxform` (`_camera_frame()`) and around the clock conversion (`_tstop()`), it catches
   `oops.OopsSpiceError.CSPYCE_ERRORS` and treats an exception as missing SPICE data
   only if `oops.OopsSpiceError.is_spice_error()` finds a SPICE code in its text, or if it
   is the `OopsSpiceError` that `sclk_ticks()` raises for a count it cannot place in one
   partition; anything else propagates. `_camera_frame()` then returns an
   `oops.frame.SpiceErrorFrame` (rms-oops's shared form, used by all four hosts), which
-  raises that error whenever it is evaluated. `from_file()` evaluates the frame, so it
-  raises at load time; `from_index()` does not, so it keeps the row. Neither checks
-  anything when a `frame` override is given. An image
-  for which no source read gives the exposure, camera, spacecraft, a time or a clock
-  count, or (without a `frame` override) a clock count raises
-  `oops.host.HostFormatError`, naming the items and the file, from both methods; a
-  missing `MISSION_PHASE_NAME` is computed from the time. Across the VGISS labels 2,137
-  images lack a record, 1,090 of them in VGISS_8210. The index and the label of
-  C3940530 (VGISS_6201) lack an exposure (only its VICAR header gives one, 5 ms), so
-  iterating `from_index()` over that volume raises at that row and ends there (a
-  `filter` can leave the row out). Both questions, that row and whether an iteration
+  raises that error whenever it is evaluated. `from_file()` evaluates the observation's
+  frame after `oops.Host._apply_overrides()`, relative to J2000 at the cadence's
+  midtime, so it raises at load time; `from_index()` does not, so it keeps the row.
+  Neither checks anything when a `frame` override is given. The time in the message is
+  where that evaluation reaches the `SpiceErrorFrame`: the midtime after any cadence
+  override, moved by any `timeshift`, once for "T" and once more for "F" (the
+  `SpiceErrorFrame` is relative to J2000, so the `FrameShift` around it moves its
+  evaluation). A `tracker` cannot be built on that frame, so oops leaves the frame
+  unwrapped and the time stays the midtime. The host does not call
+  `oops.Host._check_spice_frame()`, which is for a frame that reads the C kernels when
+  it is evaluated: Voyager's frame reads them when it is built, at the image's own clock
+  count, and given the `SpiceErrorFrame` the check would wrap that frame's
+  `OopsSpiceError` in another, with a different time. An image for which no source read gives the exposure, camera,
+  spacecraft, a time or a clock count, or (without a `frame` override) a clock stop
+  count raises `oops.host.HostFormatError`, naming the items and the file, from both
+  methods; a missing `MISSION_PHASE_NAME` is computed from the time. Across the
+  VGISS labels 2,137 images lack a record, 1,090 of them in VGISS_8210. The index and
+  the label of C3940530 (VGISS_6201) lack an exposure (only its VICAR header gives one,
+  5 ms), so iterating `from_index()` over that volume raises at that row and ends there
+  (a `filter` can leave the row out). Both questions, that row and whether an iteration
   should go on past a row error, are open; the comment in `from_index()` cites the
   issues.
 - `from_index()` accepts only a `VGISS_xxxx_raw_image_index.lbl` of the Ring-Moon
@@ -152,13 +158,12 @@ apply here to the stubs described below.
   `^INDEX_TABLE` points to an object named `TABLE`), raises `HostIndexError` at call
   time, before any file is read, with a message pointing to the metadata index; oops
   does this from `METADATA_INDEX_EXAMPLE`, in `_read_index_label()` (which
-  `_index_label()` calls) and in `_index_rows()`. The
-  `VGISS_xxxx_supplemental_index.lbl` matches the raw image index row for row. The
-  default `oops.Host.SUPPLEMENT` search would look for
-  `..._raw_image_supplemental_index`, so the host overrides `_supplement_path()` to
-  replace `_raw_image_index` with `_supplemental_index`, and to raise `HostIndexError`
-  for an index whose name lacks it; `from_index()` calls it with `row_dicts` too, so the
-  full index is refused either way. The supplement is required:
+  `_index_label()` calls) and in `_index_rows()`. The `VGISS_xxxx_supplemental_index.lbl`
+  matches the raw image index row for row. The default `oops.Host.SUPPLEMENT` search
+  would look for `..._raw_image_supplemental_index`, so the host overrides
+  `_supplement_path()` to replace `_raw_image_index` with `_supplemental_index`, and to
+  raise `HostIndexError` for an index whose name lacks it; `from_index()` calls it with
+  `row_dicts` too, so the full index is refused either way. The supplement is required:
   `supplement=None` raises `HostIndexError` unless `row_dicts` is given. `select` other
   than None raises `OopsValueError` and any unknown keyword `OopsTypeError`, through
   `oops.Host._check_select()` and `_check_keywords()`. Every index label gives
@@ -170,6 +175,12 @@ apply here to the stubs described below.
   index files are corrected, and each workaround's `#` comment cites its item. The
   widened label stays a dictionary passed to `_index_rows()` as `label`. The host keeps
   oops's default `_correct_label_text()`, since every VGISS label parses as written.
+  Parsing is not the same as reading every value right: the default fast parser reads
+  the quoted `EDIT_MODE_ID = "1:32"` (472 raw images in VGISS_8xxx, four labels each)
+  as the time 01:32, and text repair cannot prevent it. `_plain_label_dict()` rebuilds
+  the text "1:32" from that time, so `label_dict` and `dict` agree with the label and
+  the index; its `#` comment cites the parser issue. A fast-versus-strict comparison
+  of every label in four whole volumes found no other difference on an image label.
 - `oops.Host.from_index()` identifies the host from the index label's `DATA_SET_ID`
   (`_detect_in_index()`; every VGISS index label, metadata or volume, gives one such as
   "VG1/VG2-S-ISS-2/3/4/6-PROCESSED-V1.0") and passes the call, every argument included,
@@ -215,11 +226,12 @@ apply here to the stubs described below.
   a label input reads the label and, unless `astrometry=True`, the image file its
   `^IMAGE` names, found case-tolerantly. With `astrometry=True` a label input reads the
   label alone, and the image file need not exist. The metadata come from whatever was
-  read. `_header_items()` converts the VICAR header's `LAB02`, `LAB03` and `LAB05` fields, the ERT of `LAB04` (which, holding
-  more, also stays in `dict` under its own name) and its tasks to the label's names
-  and forms, leaving out any field filled with asterisks or garbled (an hour of 24 or
-  more, a year outside 77-99, PICNO bytes, FDS 00000.00), and respells the target fields
-  that no label uses through `_HEADER_TARGET_SPELLINGS` (`ENCELADU`, `1989N1`, ...).
+  read. `_header_items()` converts the VICAR header's `LAB02`, `LAB03` and `LAB05`
+  fields, the ERT of `LAB04` (which, holding more, also stays in `dict` under its own
+  name) and its tasks to the label's names and forms, leaving out any field filled with
+  asterisks or garbled (an hour of 24 or more, a year outside 77-99, PICNO bytes, FDS
+  00000.00), and respells the target fields that no label uses through
+  `_HEADER_TARGET_SPELLINGS` (`ENCELADU`, `1989N1`, ...).
   `_merge_items()` takes an item from whichever source gives it and, where both do,
   the source that `_RESOLUTION` names for that item, "label" or "header", the same for
   every image; never a per-image test. Every item is "label" now. The comment above
@@ -230,30 +242,30 @@ apply here to the stubs described below.
   -99.9999 in the index and the `IMAGE_ID` placeholder `0000Zn+000`) counts as missing,
   also inside a label OBJECT (`dict['IMAGE']['REFLECTANCE_SCALING_FACTOR']` 'UNK' on
   some products); `label_dict` and `header_dict` keep them. No VGISS index table, in
-  the metadata tree or in a volume's `INDEX`, gives `NOT APPLICABLE`. A subfield is absent when no source gives it, never
-  None (`if_scale` included). `calibrations` is `[FlatCalib('I/F', if_scale)]` when
-  `if_scale` is present, else empty (it matches the label's REFLECTANCE_SCALING_FACTOR,
-  which the rms-oops host read, except for the 3.345 factor on Voyager 1 Saturn).
+  the metadata tree or in a volume's `INDEX`, gives `NOT APPLICABLE`. A subfield is
+  absent when no source gives it, never None (`if_scale` included). `calibrations` is
+  `[FlatCalib('I/F', if_scale)]` when `if_scale` is present, else empty (it matches the
+  label's REFLECTANCE_SCALING_FACTOR, which the rms-oops host read, except for the 3.345
+  factor on Voyager 1 Saturn).
   `dict` is the merged metadata plus every other key of each source (`LABEL3`, ...), but
   never `LAB02`, `LAB03` or `LAB05`, whose fields it holds under PDS3 names.
   `label_dict` is the label's own keywords (`from_file()` always parses with
   `sources=False`, and `_plain_label_dict()` drops every lower-case parser entry, such as
   `_fmt`, `_unit`, `^IMAGE_offset`, `objects` and the `_source` keys of a label that
-  `oops.Host.from_file()` parsed; times as the parser's ISO strings, sets as lists, no
-  END) and
-  `header_dict` the header (`as_dict(unique=True)`, a repeated parameter keyed
-  `TASK[0]`, `TASK[1]`, ...), each only when read; all three are JSON. A `VicarImage`
-  rewrites `HOST` (and `BHOST`) with the reading machine when it reads the array, so the
-  header of any `VicarImage` with a file path, read by the host or given by the caller,
-  in a full or an astrometry read, comes from the file's `VicarLabel`
+  `oops.Host.from_file()` parsed; times as the parser's ISO strings, sets as lists, END
+  left out) and `header_dict` the header (`as_dict(unique=True)`, a repeated parameter
+  keyed `TASK[0]`, `TASK[1]`, ...), each only when read; all three are JSON. A
+  `VicarImage` rewrites `HOST` (and `BHOST`) with the reading machine when it reads the
+  array, so the header of any `VicarImage` with a file path, read by the host or given
+  by the caller, in a full or an astrometry read, comes from the file's `VicarLabel`
   (`_header_as_written()`), and `header_dict` is the same from every input that reads
-  the header. `from_file()` raises `OopsTypeError` for an
-  unknown keyword and `OopsValueError` for a `select` other than None, as
-  `from_index()` does; `oops.Host.from_file()` passes the path and the caller's
-  arguments unchanged, so both entry points give the same Snapshot. `spacecraft`, the
-  int 1 or 2, is how a consumer tells Voyager 1 from Voyager 2. Consumers read the
-  documented subfields, including `spacecraft_clock_start_count` and
-  `spacecraft_clock_stop_count`, rather than parsing `dict`.
+  the header. `from_file()` raises `OopsTypeError` for an unknown keyword and
+  `OopsValueError` for a `select` other than None, as `from_index()` does;
+  `oops.Host.from_file()` passes the path and the caller's arguments unchanged, so both
+  entry points give the same Snapshot. `spacecraft`, the int 1 or 2, is how a consumer
+  tells Voyager 1 from Voyager 2. Consumers read the documented subfields, including
+  `spacecraft_clock_start_count` and `spacecraft_clock_stop_count`, rather than parsing
+  `dict`.
 - `filepath`, `basename`, `abspath` and `image_url` name the image file on every input.
   They are absent for parsed content without a file path (a `Pds3Label` made from text, a
   `VicarImage` made from an array), and a full read of such content raises
@@ -272,8 +284,8 @@ apply here to the stubs described below.
   respells it as the label does (`CLEAR`, `CH4_JS`) on every path.
 - pdsparser's default "fast" method rejects some valid VGISS labels, such as
   `C2673426_GEOMED.LBL` of VGISS_7205, whose quoted `NOTE` value starts on the line after
-  the keyword. `from_file()` reads labels through
-  `_read_fileinfo(..., pds3_fallback=True)`, so oops parses the label again with
+  the keyword. `from_file()` reads labels through `_read_fileinfo(...,
+  pds3_fallback=True)`, so oops parses the label again with
   "strict", then "loose", also after a `ValueError` (an hour of 24), and raises
   `PdsHostError` naming the label and each method's error if all fail. The host wraps
   only the VICAR errors, so that their messages name the file. `oops.Host.from_file()`
