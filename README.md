@@ -49,7 +49,7 @@ is a product of the [PDS Ring-Moon Systems Node](https://pds-rings.seti.org).
   platform C kernels, or from a frame that the caller supplies.
 - **Calibration to I/F**: a calibrated or geometrically corrected image carries the
   factor that converts its data to I/F.
-- **Time from the spacecraft clock**: an image whose labels give no time takes it from
+- **Time from the spacecraft clock**: an image whose labels lack a time takes it from
   its spacecraft clock count, through the SPICE clock kernel.
 
 # Installation

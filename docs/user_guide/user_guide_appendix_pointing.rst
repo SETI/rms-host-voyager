@@ -97,7 +97,7 @@ The label's clock count is the right one
 
 Where the PDS3 label and the VICAR header give different clock counts, the header's is
 one or two FDS minutes later for 62 of the 63 images that differ. For every one checked,
-the C kernels hold no record at the header's count and hold the image's pointing at the
+the C kernels lack a record at the header's count and hold the image's pointing at the
 label's.
 
 Consequences

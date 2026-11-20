@@ -18,7 +18,7 @@ What is read
 
 What the host reads depends on the file it is given and on the ``astrometry`` option.
 An astrometry read is for work that needs only the image's time and geometry, so it
-reads no image array.
+leaves the image array unread.
 
 .. list-table::
    :header-rows: 1

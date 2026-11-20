@@ -113,14 +113,15 @@ intersphinx_mapping = {
 }
 
 # Nitpicky mode: report every cross-reference that does not resolve. The check script,
-# CI, and scripts/read-docs.sh also pass -n, but the ReadTheDocs build takes no extra
-# options, so it gets nitpicky mode only from here.
+# CI, and scripts/read-docs.sh also pass -n, but the ReadTheDocs build cannot be given
+# extra options, so it gets nitpicky mode only from here.
 nitpicky = True
 
 # The only cross-references that cannot resolve are the informal type words this
-# project's docstrings use to describe what an argument accepts. They name no Python
-# object, so there is nothing for Sphinx to link them to. Anything that does name a real
-# object is expected to resolve, so do not add entries here for symbols we own or for
+# project's docstrings use to describe what an argument accepts. They are plain words
+# rather than the names of Python objects, so Sphinx cannot link them. Anything that
+# does name a real object is expected to resolve, so do not add entries here for symbols
+# we own or for
 # third-party classes with an intersphinx inventory; fix the reference instead.
 nitpick_ignore_regex = [
     # Napoleon splits a type such as "(bool, optional)" on the comma and looks up each

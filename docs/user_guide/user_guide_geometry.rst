@@ -13,8 +13,8 @@ Without ``STOP_TIME``, the host uses ``IMAGE_TIME``, the same time to the second
 the raw image index gives. The VICAR header gives both as its spacecraft event time,
 also to the second.
 
-A few images have no time in any label read. The labels of 17 raw images give none, 9 in
-VGISS_6101 and 8 in VGISS_6201, and the VICAR headers of 93 images give no valid time.
+A few images have no time in any label read. The labels of 17 raw images lack one, 9 in
+VGISS_6101 and 8 in VGISS_6201, and the VICAR headers of 93 images lack a valid time.
 For these the host takes the time of the image's spacecraft clock stop count and sets the
 ``time_from_sclk`` subfield to True:
 
@@ -52,12 +52,13 @@ built from that record and the rotation from the scan platform to the camera. Be
 frame is fixed, the ``navigation`` and ``tracker`` overrides work as usual, but a time
 shift of the frame, the letter ``F`` in the ``timeshift`` override, has no effect on it.
 
-When the SPICE kernels cannot supply the pointing, because the C kernels hold no record
+When the SPICE kernels cannot supply the pointing, because the C kernels lack a record
 for the count, the clock kernel cannot encode the count, or the frame kernel does not
 connect the scan platform to the camera, the frame raises :exc:`oops.OopsSpiceError`
 whenever it is evaluated. :meth:`~host_voyager.oops.iss.VoyagerISS.from_file`
-evaluates it before it returns, at the middle of the exposure after any ``cadence`` or
-``timeshift`` override. :meth:`~host_voyager.oops.iss.VoyagerISS.from_index` does not,
+evaluates it before it returns, at the time at which the Snapshot evaluates its frame:
+the middle of the exposure, moved by any ``cadence`` or ``timeshift`` override. The
+error gives that time. :meth:`~host_voyager.oops.iss.VoyagerISS.from_index` does not,
 so the error appears only when the Snapshot's frame is evaluated. Of the 76,652 VGISS
 raw images, 2,137 have no record, 1,090 of them in VGISS_8210.
 

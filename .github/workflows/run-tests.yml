@@ -36,8 +36,8 @@ jobs:
         run: |
           ruff check src tests
 
-      # Ruff implements no rule in the E121-E133 range, so continuation-line
-      # indentation is the one pycodestyle family it cannot gate. This step matches
+      # Ruff lacks the rules E121-E133, so continuation-line indentation is the one
+      # pycodestyle family that it cannot check. This step matches
       # `--flake8-cont` in scripts/run-all-checks.sh and reads the per-file-ignores in
       # .flake8.
       - name: Flake8 continuation-line indent
@@ -66,8 +66,8 @@ jobs:
         run: |
           python -m mypy.stubtest host_voyager --mypy-config-file pyproject.toml --allowlist .stubtest-allowlist
 
-      # -W makes warnings errors and -n (nitpicky) makes a cross-reference with no
-      # target one of them.
+      # -W makes warnings errors, and -n (nitpicky) makes a cross-reference that cannot
+      # be resolved one of them.
       - name: Sphinx
         run: |
           sphinx-build -W -n -b html docs docs/_build
@@ -107,7 +107,7 @@ jobs:
         run: |
           python -m pip install -e ".[dev]"
 
-      # The tests need no SPICE kernels or data files; see tests/oops/conftest.py.
+      # The tests run without SPICE kernels or data files; see tests/oops/conftest.py.
       - name: Test with coverage
         run: |
           python -m pytest --cov-report=xml

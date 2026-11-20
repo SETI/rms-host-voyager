@@ -60,21 +60,34 @@ Reading a PDS3 index
 
     - The index is one that a volume keeps in its own ``INDEX`` directory, such as
       ``RAWIMAGES.LBL``, which the host does not read. The message points to the
-      metadata index.
-    - The index's file name holds no ``_raw_image_index`` from which to find the
-      supplement.
+      metadata index. This is checked before any file is read.
+    - ``supplement`` is left at its default, and the index's file name lacks the
+      ``_raw_image_index`` from which the host finds the supplement. This is checked
+      when ``row_dicts`` is given too.
     - ``supplement`` is None and ``row_dicts`` is not given.
     - A table cannot be read as an index, because its label lacks the table it points
       to.
 
-    During the iteration, at the row concerned:
+    During the iteration:
 
-    - The index row and the supplement row in the same position give different files.
-    - The supplement ends before the index.
-    - A row does not match the description in its label, or the table holds fewer rows
-      than its label says. The few rows read with such a row are not given either.
+    - At a row where the index row and the supplement row in the same position give
+      different files.
+    - At the row where the supplement ends before the index.
+    - After the last row of a table that holds fewer rows than its label says. Every
+      row that the table holds is given first.
+    - At a row that is longer than its label says. The rows are read ten at a time, and
+      none of the ten read with that row is given.
 
-    After the last row: the supplement has more rows than the index.
+    After the last row: the supplement has more rows than the index, or a table holds
+    more rows than its label says.
+
+    The tables are checked only for these errors. A value that cannot be read as the
+    number its column describes gives a warning, and the row keeps the value as text.
+    A row that is shorter than its label says is read as it is.
+
+:exc:`ValueError`
+    A row gives as text a number that the Snapshot needs, such as an exposure that holds
+    a letter. This error is raised when the iteration reaches that row.
 
 :exc:`FileNotFoundError`
     The label of the supplemental index does not exist, when the call is made; or a
@@ -96,7 +109,9 @@ Reading a PDS3 index
 
 :exc:`~oops.OopsValueError`
     ``select`` is not None, ``filter`` gives a column that neither table has, or
-    ``pds3_options`` holds an option that the parser does not accept.
+    ``pds3_options`` holds an option that the parser does not accept. When ``row_dicts``
+    is given, ``filter`` is checked against the first row: when the call is made if the
+    rows are a list or another sequence, and otherwise when the iteration reads that row.
 
 :exc:`~oops.host.PdsHostError`
     The PDS3 label of the index or of the supplement cannot be parsed.

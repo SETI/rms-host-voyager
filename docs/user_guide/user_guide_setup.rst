@@ -69,7 +69,7 @@ cameras' fields of view. To choose the bodies that OOPS defines, or to use only 
 kernels that existed before a given date, call
 :meth:`~host_voyager.oops.iss.VoyagerISS.initialize` before opening the first image.
 Its ``planets`` argument is one planet number, from 1 for Mercury to 9 for Pluto, or a
-sequence of them. This call defines Saturn, planet 6, and its moons, and no other planet:
+sequence of them. This call defines only Saturn, planet 6, and its moons:
 
 .. code-block:: python
 

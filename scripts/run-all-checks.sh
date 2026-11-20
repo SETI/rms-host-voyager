@@ -68,7 +68,7 @@
 # Checks (each run separately; -d runs Sphinx and the text checks):
 #   Code:     optional: ruff check, ruff format --check, flake8 continuation-line
 #             indent, mypy, pytest, pyroma, stubtest, bandit, vulture, pip-audit
-#             (see ENABLE_* above). Ruff implements no E12x/E13x rule, so the
+#             (see ENABLE_* above). Ruff lacks the E12x/E13x rules, so the
 #             continuation-line indent checks come from flake8 instead.
 #   Sphinx:   make -C docs html SPHINXOPTS="-W -n"
 #   Text:     codespell src/ tests/ docs/ scripts/ README.md CONTRIBUTING.md CLAUDE.md
@@ -448,8 +448,8 @@ run_code_checks() {
 
     if [ "$RUN_FLAKE8_CONT" = true ] && [ "$ENABLE_FLAKE8_CONT" = true ]; then
         print_info "Running flake8 continuation-line checks (E12x, E13x)..."
-        # Ruff implements no rule in the E121-E133 range, so continuation-line
-        # indentation is the one pycodestyle family it cannot gate. flake8 reads
+        # Ruff lacks the rules E121-E133, so continuation-line indentation is the one
+        # pycodestyle family that it cannot check. flake8 reads
         # .flake8 for the per-file exemptions.
         if python -m flake8 --select=E12,E13 src tests; then
             print_success "Flake8 continuation-line checks passed"

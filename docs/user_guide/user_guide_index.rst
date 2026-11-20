@@ -4,7 +4,7 @@ Reading a PDS3 Index
 
 :meth:`~host_voyager.oops.iss.VoyagerISS.from_index` makes one
 :class:`~oops.observation.Snapshot` for each row of a PDS3 index. It reads only the
-index tables and opens none of the images, which makes it much faster than opening a
+index tables and leaves the images unopened, which makes it much faster than opening a
 volume's images one at a time.
 
 It returns an iterator, which gives the Snapshots row by row, in the order of the index.
@@ -44,7 +44,8 @@ Two other PDS3 indexes are not accepted, and both raise
 ``VGISS_6109_index.lbl``, which has a row for each product of each image. The other is
 an index that a volume keeps in its own ``INDEX`` directory, such as
 ``VGISS_6109/INDEX/RAWIMAGES.LBL``, which has no supplement. The error's message points
-to the metadata index.
+to the metadata index. Both are refused when the call is made, also when ``row_dicts``
+is given, and a volume's own index is refused before any file is read.
 
 The ``supplement`` argument chooses the supplemental index:
 
@@ -86,7 +87,10 @@ Other arguments
     A dictionary of column names and the values to keep. A row is kept when each column
     equals its value, is one of a set of values, or falls in a range given as a tuple of
     two values. Each row is tested when the iteration reaches it. A column that neither
-    table has raises an error that gives the column, when the call is made.
+    table has raises an error that gives the column, when the call is made. When
+    ``row_dicts`` is given, the columns are those of the first row, so the error comes
+    when the call is made if the rows are a list or another sequence, and otherwise when
+    the iteration reads the first row.
 
 ``select``
     Must be None. Each row is one image, so there is nothing to select, and any other
@@ -124,7 +128,7 @@ rest of that volume, use ``filter`` to keep only the rows you want, such as a ra
 ``IMAGE_NUMBER`` values that starts after the dark frame.
 
 The host does not check the C kernels for the pointing of an index row. If the kernels
-hold no pointing for an image, its row still gives a Snapshot, and
+lack the pointing of an image, its row still gives a Snapshot, and
 :exc:`oops.OopsSpiceError` is raised only when the Snapshot's frame is evaluated.
 
 File paths
