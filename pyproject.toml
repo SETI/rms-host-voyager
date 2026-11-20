@@ -11,13 +11,13 @@ requires-python = ">=3.11"
 dependencies = [
   "cspyce>=2.3.2",          # 2.3.2 is the first with Python 3.13 wheels
   "numpy>=2.0",
-  "rms-filecache>=2.2.0",   # 2.2.0 makes FCPath.is_local() a method
+  "rms-filecache>=3.0.0",   # 3.0.0 is the first release rms-vicar reads images through
   "rms-julian>=3.0.2",      # 3.0.2 drops pyparsing's deprecated camelCase API
   # Until rms-oops 0.5.0 is released (SETI/rms-oops PR #242), install the branch that adds
   # oops.OopsSpiceError and the Host changes; restore "rms-oops>=0.5.0" after it merges.
   "rms-oops @ git+https://github.com/SETI/rms-oops@rf_261118_oops_spice_error",
-  "rms-pdsparser>=2.4.0",   # 2.4.0 is the minimum of rms-oops
-  "rms-pdstable>=1.0.1",    # 1.0.1 accepts an FCPath label path
+  "rms-pdsparser>=2.4.1",   # 2.4.1 is the minimum of rms-pdstable 1.2.0
+  "rms-pdstable>=1.2.0",    # 1.2.0 streams a table: PdsTable(defer_load=True), iter_dicts
   "rms-vicar>=1.4.0",       # 1.4.0 adds as_dict
 ]
 license = "Apache-2.0"
