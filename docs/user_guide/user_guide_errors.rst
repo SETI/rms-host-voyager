@@ -23,9 +23,9 @@ Reading an image file
 :exc:`~oops.host.HostFormatError`
     No label read gives the spacecraft, the camera, or the exposure; neither a time nor a
     clock count; or, unless ``frame`` is given, the clock stop count. The message gives
-    the missing items and the file. Also raised when the image array is needed and no
-    file path is known for the parsed content passed in, so that the image file cannot
-    be found.
+    the missing items and the file. Also raised by a full read of a parsed PDS3 label or
+    VICAR label that lacks a file path, because the image file cannot then be found. A
+    parsed VICAR image carries its own array, so it is read without its file.
 
 :exc:`~oops.host.PdsHostError`
     None of the fast, strict, and loose methods of the parser can read the PDS3 label,
@@ -56,7 +56,7 @@ Reading a PDS3 index
 :meth:`~host_voyager.oops.iss.VoyagerISS.from_index` raises:
 
 :exc:`~oops.host.HostIndexError`
-    Any of these:
+    When the call is made, any of these:
 
     - The index is one that a volume keeps in its own ``INDEX`` directory, such as
       ``RAWIMAGES.LBL``, which the host does not read. The message points to the
@@ -66,29 +66,36 @@ Reading a PDS3 index
     - ``supplement`` is None and ``row_dicts`` is not given.
     - A table cannot be read as an index, because its label lacks the table it points
       to.
-    - An image appears in only one of the index and the supplement, or the two tables
-      list the images in different orders and one of them lists an image twice.
-    - ``row_dicts`` lack the supplement's columns, and the index has no row for one of
-      them.
+
+    During the iteration, at the row concerned:
+
+    - The index row and the supplement row in the same position give different files.
+    - The supplement ends before the index.
+    - A row does not match the description in its label, or the table holds fewer rows
+      than its label says. The few rows read with such a row are not given either.
+
+    After the last row: the supplement has more rows than the index.
 
 :exc:`FileNotFoundError`
-    The supplemental index does not exist.
+    The label of the supplemental index does not exist, when the call is made; or a
+    table file does not exist, when the iteration starts.
 
 :exc:`~oops.host.HostFormatError`
-    A row gives no exposure, camera, or spacecraft; neither a time nor a clock count; or,
-    unless ``frame`` is given, no clock stop count. The message gives the missing item
-    and the image file. This error is raised when the iteration reaches that row.
+    A row lacks the exposure, the camera, or the spacecraft; both the time and the clock
+    count; or, unless ``frame`` is given, the clock stop count. The message gives the
+    missing item and the image file. This error is raised when the iteration reaches that
+    row.
 
 :exc:`oops.OopsSpiceError`
-    A row gives no time, and the clock kernel cannot convert its clock count. This error
+    A row lacks a time, and the clock kernel cannot convert its clock count. This error
     is raised when the iteration reaches that row.
 
 :exc:`~oops.OopsTypeError`
-    A keyword argument is not one that the method accepts, or a range in ``filter``
-    cannot be compared with the values of its column.
+    A keyword argument is not one that the method accepts; or, when the iteration
+    reaches a row, a range in ``filter`` cannot be compared with that row's value.
 
 :exc:`~oops.OopsValueError`
-    ``select`` is not None, ``filter`` gives a column that the index does not have, or
+    ``select`` is not None, ``filter`` gives a column that neither table has, or
     ``pds3_options`` holds an option that the parser does not accept.
 
 :exc:`~oops.host.PdsHostError`
@@ -98,10 +105,10 @@ Reading a PDS3 index
     The file is not a Voyager ISS index.
 
 :exc:`OSError`
-    The index or a named supplement does not exist or cannot be read.
+    The label of the index or of a named supplement cannot be read.
 
 The method does not check the pointing. An image whose pointing the SPICE kernels cannot
 supply raises :exc:`oops.OopsSpiceError` only when its Snapshot's frame is evaluated.
 
-An error raised for one row ends the iteration: the iterator gives no rows after it.
-:doc:`user_guide_index` describes how to leave such a row out.
+An error raised for one row ends the iteration there. :doc:`user_guide_index` describes
+how to leave such a row out.

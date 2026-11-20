@@ -65,9 +65,9 @@ observation then carries one calibration, an :class:`~oops.calibration.FlatCalib
 ``I/F`` with that factor.
 
 Only the VICAR header gives this factor. The header of a RAW or CLEANED product has no
-such line, and an astrometry read of a PDS3 label and a row of an index read no header
-at all. These observations have no ``if_scale`` subfield and no calibration, so check
-for the subfield before using it. The PDS3 label's
+such line. An astrometry read of a PDS3 label leaves the header unread, and a row of an
+index comes from the index tables alone. These observations have no ``if_scale``
+subfield and no calibration, so check for the subfield before using it. The PDS3 label's
 ``REFLECTANCE_SCALING_FACTOR`` is not used: for the Voyager 1 images of Saturn it is
 3.345 times larger than the header's factor.
 

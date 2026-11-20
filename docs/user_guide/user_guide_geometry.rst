@@ -62,9 +62,9 @@ so the error appears only when the Snapshot's frame is evaluated. Of the 76,652 
 raw images, 2,137 have no record, 1,090 of them in VGISS_8210.
 
 A caller that has better pointing can pass it with the ``frame`` override, for example
-as a :class:`~oops.frame.Cmatrix`. The host then uses that frame, does not consult the C
-kernels, and raises no error about missing pointing. The image then needs no clock
-count.
+as a :class:`~oops.frame.Cmatrix`. The host then uses that frame in place of the C
+kernels, so missing pointing in the kernels cannot cause an error. The image can then be
+read without a clock count.
 
 Targets and light sources
 =========================

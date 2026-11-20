@@ -68,9 +68,17 @@ Parsed input
 A label or image that has already been parsed can be passed in its place: a
 :class:`~pdsparser.Pds3Label` is read as a PDS3 label, and a :class:`~vicar.VicarLabel`
 or :class:`~vicar.VicarImage` as the image file. Parsed content that was not read from a
-file has no path, so the four path subfields are absent. A read that needs the image
-array cannot find the image file without a path, so it raises
-:exc:`~oops.host.HostFormatError`, saying that no file path is known.
+file has no path, so the four path subfields are absent. A :class:`~vicar.VicarImage`
+holds its array, so both reads of one work without a path. A
+:class:`~pdsparser.Pds3Label` or :class:`~vicar.VicarLabel` holds only the metadata, so
+a full read of one without a path cannot find the image file, and it raises
+:exc:`~oops.host.HostFormatError`, saying that no file path is known. An astrometry read
+of either works without a path.
+
+The header of a :class:`~vicar.VicarImage` gives the reading machine in ``HOST`` (and
+``BHOST``) once its array has been read. When the :class:`~vicar.VicarImage` was read
+from a file, the host reads that file's header again, so ``header_dict`` gives the
+machine that wrote the file, as every other input does.
 
 Options
 =======

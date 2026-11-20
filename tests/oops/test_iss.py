@@ -17,6 +17,7 @@ import julian
 import numpy as np
 import oops
 import pdsparser
+import pdstable
 import pytest
 import vicar
 from filecache import FCPath, FileCache
@@ -164,11 +165,15 @@ def test_detect_in_vicar(label: dict[str, str], expected: bool) -> None:
 
 
 @pytest.mark.parametrize(('label', 'expected'), [
+    ({'DATA_SET_ID': 'VG1/VG2-J-ISS-2/3/4/6-PROCESSED-V1.0'}, True),
     ({'DATA_SET_ID': 'VG1/VG2-S-ISS-2/3/4/6-PROCESSED-V1.0'}, True),
+    ({'DATA_SET_ID': 'VG2-U-ISS-2/3/4/6-PROCESSED-V1.0'}, True),
     ({'DATA_SET_ID': 'VG2-N-ISS-2/3/4/6-PROCESSED-V1.0'}, True),
+    ({'DATA_SET_ID': 'VG1/VG2-SR-ISS-4-PROFILES-V1.0'}, False),
     ({'DATA_SET_ID': 'CO-S-ISSNA/ISSWA-2-EDR-V1.0'}, False),
     ({'VOLUME_ID': 'VGISS_6109'}, None),
-], ids=['both-spacecraft', 'voyager-2', 'cassini', 'no-data-set'])
+], ids=['jupiter', 'saturn', 'uranus', 'neptune', 'ring-profiles', 'cassini',
+        'no-data-set'])
 def test_detect_in_index(label: dict[str, str], expected: bool | None) -> None:
     assert VoyagerISS._detect_in_index(label) is expected
 
@@ -1041,6 +1046,19 @@ def test_from_file_full_read_keeps_the_header_as_written(tmp_path: pathlib.Path,
     assert getattr(obs, name)['HOST'] == _VICAR_HOST
 
 
+@pytest.mark.parametrize('astrometry', [False, True], ids=['full', 'astrometry'])
+def test_from_file_vicar_image_keeps_the_header_as_written(tmp_path: pathlib.Path,
+                                                           astrometry: bool) -> None:
+    """A VicarImage given has already replaced its header's HOST with the reading
+    machine, so the header is read again from its file, whichever read is asked for."""
+
+    (_label, image) = _write_label_and_image(tmp_path, label3=_LABEL3)
+    vic = vicar.VicarImage(image, strict=False)
+    assert vic['HOST'] != _VICAR_HOST
+    obs = VoyagerISS.from_file(vic, astrometry=astrometry)
+    assert obs.header_dict['HOST'] == _VICAR_HOST
+
+
 @pytest.mark.parametrize('input_', INPUTS)
 def test_from_file_gives_the_dictionaries_of_the_sources_read(tmp_path: pathlib.Path,
                                                               input_: str) -> None:
@@ -1738,7 +1756,8 @@ def test_from_file_rejects_an_unknown_keyword() -> None:
 @pytest.mark.parametrize('select', [0, slice(None), 'data'])
 def test_from_file_refuses_select(select: Any) -> None:
     with pytest.raises(oops.OopsValueError,
-                       match='a Voyager ISS image file is one observation'):
+                       match='each Voyager ISS image file is one observation; select '
+                             'must be None'):
         VoyagerISS.from_file(RAW_LABEL, astrometry=True, select=select)
 
 ##########################################################################################
@@ -1746,8 +1765,84 @@ def test_from_file_refuses_select(select: Any) -> None:
 ##########################################################################################
 
 
+def _merged_rows() -> list[dict[str, Any]]:
+    """The rows of the test index merged with its supplement, as the host reads them."""
+
+    label = VoyagerISS._index_label(FCPath(INDEX), None, None)
+    return list(VoyagerISS._index_rows(INDEX, label=label))
+
+
+def _index_only_rows() -> list[dict[str, Any]]:
+    """The rows of the test index read without its supplement."""
+
+    return list(VoyagerISS._index_rows(INDEX, supplement=None))
+
+
 def test_from_index_reads_every_row() -> None:
     assert len(list(VoyagerISS.from_index(INDEX))) == INDEX_ROWS
+
+
+def test_rows_are_paired_by_position() -> None:
+    """Every VGISS supplement lists the images of its index in the same order."""
+
+    assert VoyagerISS.MERGE_SUPPLEMENT_BY_FILE is False
+
+
+def test_from_index_call_reads_no_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The call reads only the labels; the rows are read when the iteration starts."""
+
+    reads: list[Any] = []
+    iter_dicts = pdstable.PdsTable.iter_dicts
+
+    def spy(self: Any, *args: Any, **kwargs: Any) -> Any:
+        reads.append(self)
+        return iter_dicts(self, *args, **kwargs)
+
+    monkeypatch.setattr(pdstable.PdsTable, 'iter_dicts', spy)
+    snapshots = VoyagerISS.from_index(INDEX)
+    assert reads == []
+    next(snapshots)
+    assert len(reads) == 2      # the index and the supplement
+
+
+def _write_rows(table: pathlib.Path, edit: Any) -> None:
+    """Rewrite the rows of a copied table through a function of its list of rows."""
+
+    lines = table.read_bytes().split(b'\r\n')
+    (rows, end) = (lines[:INDEX_ROWS], lines[INDEX_ROWS:])
+    table.write_bytes(b'\r\n'.join(edit(rows) + end))
+
+
+def test_from_index_yields_the_rows_before_a_missing_row(tmp_path: pathlib.Path) -> None:
+    """Rows are read as the iteration proceeds, so in an index whose table ends five rows
+    before its label says, every row it holds is built before the error is raised."""
+
+    index = _copy_index(tmp_path)
+    _write_rows(index.with_suffix('.tab'), lambda rows: rows[:25])
+    snapshots = VoyagerISS.from_index(index)
+    assert len(list(itertools.islice(snapshots, 25))) == 25
+    with pytest.raises(oops.host.HostIndexError,
+                       match='25 rows in file; label says 30 rows'):
+        next(snapshots)
+
+
+def test_from_index_raises_at_the_first_row_out_of_order(tmp_path: pathlib.Path) -> None:
+    """Rows are paired by position, so a supplement whose rows 12 and 13 are swapped
+    gives the first 12 rows and then raises at row 12."""
+
+    index = _copy_index(tmp_path)
+
+    def swap(rows: list[bytes]) -> list[bytes]:
+        (rows[12], rows[13]) = (rows[13], rows[12])
+        return rows
+
+    _write_rows(tmp_path / SUPPLEMENT.with_suffix('.tab').name, swap)
+    snapshots = VoyagerISS.from_index(index)
+    assert len(list(itertools.islice(snapshots, 12))) == 12
+    with pytest.raises(oops.host.HostIndexError,
+                       match=r'^index row 12 gives .* but the supplement row in the same '
+                             r'position gives'):
+        next(snapshots)
 
 
 def test_from_index_builds_each_row_when_reached(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1847,9 +1942,8 @@ _ROW9_URL = 'https://pds-rings.seti.org/holdings/volumes/VGISS_6xxx/VGISS_6109/'
 
 def test_from_index_remote_image_file_has_a_url_and_no_abspath(
         file_cache: FileCache) -> None:
-    rows = VoyagerISS._read_index_rows(INDEX, supplement=SUPPLEMENT)
-    obs = list(VoyagerISS.from_index(_remote_index(file_cache), row_dicts=rows,
-                                     supplement=SUPPLEMENT))[9]
+    obs = list(VoyagerISS.from_index(_remote_index(file_cache),
+                                     row_dicts=_merged_rows()))[9]
     assert obs.image_url == _ROW9_URL
     assert str(obs.filepath) == _ROW9_URL
     assert not hasattr(obs, 'abspath')
@@ -1858,9 +1952,8 @@ def test_from_index_remote_image_file_has_a_url_and_no_abspath(
 def test_from_index_remote_image_file_has_an_abspath_when_cached(
         file_cache: FileCache) -> None:
     local = _put_in_cache(file_cache, _ROW9_URL)
-    rows = VoyagerISS._read_index_rows(INDEX, supplement=SUPPLEMENT)
-    obs = list(VoyagerISS.from_index(_remote_index(file_cache), row_dicts=rows,
-                                     supplement=SUPPLEMENT))[9]
+    obs = list(VoyagerISS.from_index(_remote_index(file_cache),
+                                     row_dicts=_merged_rows()))[9]
     assert obs.abspath == local.resolve()
 
 
@@ -1903,19 +1996,11 @@ def test_from_index_requires_a_raw_image_index(tmp_path: pathlib.Path) -> None:
         VoyagerISS.from_index(copy)
 
 
-def test_from_index_rejects_the_rows_of_the_full_index(tmp_path: pathlib.Path) -> None:
-    copy = tmp_path / 'VGISS_6109_index.lbl'
-    shutil.copy(INDEX, copy)
-    shutil.copy(INDEX.with_suffix('.tab'), tmp_path)
-    rows = VoyagerISS._read_index_rows(INDEX, supplement=SUPPLEMENT)
-    with pytest.raises(oops.host.HostIndexError, match='needs a raw image index'):
-        VoyagerISS.from_index(copy, row_dicts=rows)
+def _volume_index(directory: pathlib.Path, index_dir: str = 'INDEX') -> pathlib.Path:
+    """A copy of the test index where a volume keeps its own index, in the directory
+    `index_dir`; its path."""
 
-
-def _volume_index(directory: pathlib.Path) -> pathlib.Path:
-    """A copy of the test index where a volume keeps its own index; its path."""
-
-    index = directory / 'VGISS_6109/INDEX/RAWIMAGES.LBL'
+    index = directory / 'VGISS_6109' / index_dir / 'RAWIMAGES.LBL'
     index.parent.mkdir(parents=True)
     shutil.copy(INDEX, index)
     shutil.copy(INDEX.with_suffix('.tab'), index.parent)
@@ -1931,18 +2016,36 @@ def test_from_index_refuses_a_volumes_own_index(tmp_path: pathlib.Path,
         host.from_index(_volume_index(tmp_path), supplement=SUPPLEMENT)
 
 
-def test_from_index_merges_the_supplement_into_given_rows() -> None:
-    rows = VoyagerISS._read_index_rows(INDEX)[9:11]
-    obs = list(VoyagerISS.from_index(INDEX, row_dicts=rows))
-    assert [o.dict['STOP_TIME'] for o in obs] == [STOP_TIME, '1980-10-29T06:02:10.00']
+def test_from_index_refuses_a_volumes_own_index_in_lower_case(
+        tmp_path: pathlib.Path) -> None:
+    """A copy of a volume with lower-case names keeps its index in "index"."""
+
+    with pytest.raises(oops.host.HostIndexError, match="not a volume's own index"):
+        VoyagerISS.from_index(_volume_index(tmp_path, 'index'), supplement=SUPPLEMENT)
 
 
-def test_from_index_requires_a_supplement_row_for_each_given_row() -> None:
-    rows = VoyagerISS._read_index_rows(INDEX)[9:10]
-    rows[0]['FILE_SPECIFICATION_NAME'] = 'DATA/C34502XX/C3450299_RAW.LBL'
-    with pytest.raises(oops.host.HostIndexError,
-                       match=r'no row for VGISS_6109/DATA/C34502XX/C3450299_RAW\.LBL'):
-        VoyagerISS.from_index(INDEX, row_dicts=rows)
+def test_from_index_uses_given_rows_as_they_are() -> None:
+    """Rows read from the index alone lack the supplement's STOP_TIME, and are not read
+    again; their time is the index's IMAGE_TIME, which is to the second."""
+
+    obs = list(VoyagerISS.from_index(INDEX, row_dicts=_index_only_rows()[9:10]))
+    assert len(obs) == 1
+    assert 'STOP_TIME' not in obs[0].dict
+    assert obs[0].time[1] == pytest.approx(tdb('1980-10-29T05:57:22'), abs=1.e-6)
+
+
+def test_from_index_reads_given_rows_as_the_iteration_proceeds() -> None:
+    """Given rows are taken one at a time, so a row that cannot be produced stops the
+    iteration only when it is reached."""
+
+    def rows() -> Iterator[dict[str, Any]]:
+        yield from _merged_rows()[:2]
+        raise RuntimeError('no third row')
+
+    snapshots = VoyagerISS.from_index(INDEX, row_dicts=rows())
+    assert len(list(itertools.islice(snapshots, 2))) == 2
+    with pytest.raises(RuntimeError, match='no third row'):
+        next(snapshots)
 
 
 def test_from_index_requires_the_supplement(tmp_path: pathlib.Path) -> None:
@@ -2001,7 +2104,7 @@ def test_from_index_keeps_them_with_a_custom_frame(fake_spice: FakeSpice) -> Non
 
 
 def test_from_index_row_without_a_time_takes_it_from_the_clock() -> None:
-    rows = VoyagerISS._read_index_rows(INDEX, supplement=SUPPLEMENT)
+    rows = _merged_rows()
     rows[9].update({'STOP_TIME': 'UNK', 'IMAGE_TIME': 'UNK'})
     obs = list(VoyagerISS.from_index(INDEX, row_dicts=rows))[9]
     assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
@@ -2029,6 +2132,20 @@ def test_from_index_reads_every_digit_of_the_exposure(tmp_path: pathlib.Path) ->
     obs = list(VoyagerISS.from_index(_index_with_exposure(tmp_path, '   0.0075')))[9]
     assert obs.dict['EXPOSURE_DURATION'] == 0.0075
     assert obs.texp == pytest.approx(0.0075)
+
+
+def test_from_index_reads_a_corrected_label_as_it_is(tmp_path: pathlib.Path) -> None:
+    """A label that gives the exposure column its 9 bytes is read as it is."""
+
+    index = _index_with_exposure(tmp_path, '   0.0075')
+    text = index.read_bytes()
+    exposure = text.index(b'NAME                       = EXPOSURE_DURATION')
+    bytes_7 = text.index(b'BYTES                      = 7', exposure)
+    index.write_bytes(text[:bytes_7] + b'BYTES                      = 9'
+                      + text[bytes_7 + 30:])
+    rows = [obs.dict for obs in VoyagerISS.from_index(index)]
+    assert rows[9]['EXPOSURE_DURATION'] == 0.0075
+    assert rows[10:] == [obs.dict for obs in VoyagerISS.from_index(INDEX)][10:]
 
 
 def test_from_index_dispatch_reads_every_digit_of_the_exposure(
@@ -2066,10 +2183,9 @@ def test_from_index_refuses_no_supplement() -> None:
 
 
 def test_from_index_given_rows_need_no_supplement() -> None:
-    rows = VoyagerISS._read_index_rows(INDEX)
-    obs = list(VoyagerISS.from_index(INDEX, row_dicts=rows, supplement=None))
+    obs = list(VoyagerISS.from_index(INDEX, row_dicts=_index_only_rows(),
+                                     supplement=None))
     assert len(obs) == INDEX_ROWS
-    assert 'STOP_TIME' not in obs[9].dict
 
 
 def test_from_index_uses_a_given_label(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2077,13 +2193,13 @@ def test_from_index_uses_a_given_label(monkeypatch: pytest.MonkeyPatch) -> None:
                                                           '= VGISS_6109',
                                                           'VOLUME_ID = GIVEN'))
     labels: list[Any] = []
-    read_index_rows = VoyagerISS._read_index_rows
+    index_rows = VoyagerISS._index_rows
 
     def spy(filepath: Any, **kwargs: Any) -> Any:
         labels.append(kwargs['label'])
-        return read_index_rows(filepath, **kwargs)
+        return index_rows(filepath, **kwargs)
 
-    monkeypatch.setattr(VoyagerISS, '_read_index_rows', spy)
+    monkeypatch.setattr(VoyagerISS, '_index_rows', spy)
     VoyagerISS.from_index(INDEX, label=label)
     assert labels[0]['VOLUME_ID'] == 'GIVEN'
 
@@ -2108,9 +2224,7 @@ def test_from_index_refuses_select(select: Any) -> None:
 def test_from_index_reports_an_invalid_label(tmp_path: pathlib.Path) -> None:
     index = tmp_path / INDEX.name
     index.write_text('PDS_VERSION_ID = PDS3\r\nRECORD_TYPE\r\nEND\r\n')
-    with pytest.raises(oops.host.PdsHostError,
-                       match=r'^cannot parse the PDS3 label .*'
-                             r'VGISS_6109_raw_image_index_edited\.lbl: missing "="'):
+    with pytest.raises(oops.host.PdsHostError, match='missing "=" at RECORD_TYPE'):
         VoyagerISS.from_index(index, supplement=SUPPLEMENT)
 
 

@@ -10,17 +10,17 @@ ported, as `VoyagerISS`.
 
 ## Standards
 
-Tooling and conventions follow **rms-polymath**. `.claude/rules/*.md`, which were copied from
-it, are the authoritative coding, testing, documentation, dependency and environment
-standards. The repo layout, CI and scripts come from `rms-devenv/repo_template`, adapted as
-rms-polymath adapted them, by way of `rms-host-cassini` and `rms-host-galileo`. Model
+Tooling and conventions follow **rms-polymath**. `.claude/rules/*.md`, which were copied
+from it, are the authoritative coding, testing, documentation, dependency and environment
+standards. The repo layout, CI and scripts come from `rms-devenv/repo_template`, adapted
+as rms-polymath adapted them, by way of `rms-host-cassini` and `rms-host-galileo`. Model
 changes to packaging, CI or scripts on rms-polymath's `pyproject.toml`, `.flake8`,
 `.github/workflows/` and `scripts/`, and keep them in step with rms-host-cassini and
 rms-host-galileo. The rules' references to the two published `.pyi` stubs and `stubtest`
 apply here to the stubs described below.
 
-- Hand-aligned columns (assignments, dict colons, `from x     import`) are deliberate. Never
-  run `ruff format` or any other auto-formatter.
+- Hand-aligned columns (assignments, dict colons, `from x     import`) are deliberate.
+  Never run `ruff format` or any other auto-formatter.
 - Keep the file banners: a line of 90 `#` characters at the top and bottom of each module,
   with a `# host_voyager/<file>.py` header (`.pyi` for a stub).
 
@@ -31,8 +31,11 @@ apply here to the stubs described below.
   (`-W -n`), codespell and PyMarkdown. `ruff format` is disabled.
   `.github/workflows/run-tests.yml` runs the same set. `scripts/setup-venv.sh` builds the
   `venv/` that the scripts expect; set `VENV` to use another.
-- The `oops.Host` API arrived in rms-oops 0.4.0 and `oops.OopsSpiceError` arrives in
-  0.5.0, the minimum version in `pyproject.toml`.
+- The `oops.Host` API arrived in rms-oops 0.4.0, and `oops.OopsSpiceError` and the
+  streaming index reader arrive in 0.5.0. Until 0.5.0 is released, `pyproject.toml`
+  installs the rms-oops branch of PR #242; it goes back to `rms-oops>=0.5.0` after that
+  merges. rms-pdstable 1.2.0 is the first that streams a table, and rms-filecache 3.0.0
+  the first through which rms-vicar reads images.
 - The type information is published in two stubs: `host_voyager/__init__.pyi` declares
   `VoyagerISS` in full, and `host_voyager/oops/__init__.pyi` re-exports it. `stubtest`
   checks them against the runtime in the check script and in CI, so adding, renaming or
@@ -44,12 +47,16 @@ apply here to the stubs described below.
 - `docs/conf.py` resolves the short class names in docstrings (`FCPath`, `Observation`,
   ...) through intersphinx with `_SHORT_NAMES`. Add a name there when a nitpicky build
   reports a class from another RMS package.
-- Coverage must stay at or above 65% (`fail_under` in `pyproject.toml`, and the project and
-  patch targets in `codecov.yml`). The ubuntu / Python 3.13 CI job uploads
+- Coverage must stay at or above 65% (`fail_under` in `pyproject.toml`, and the project
+  and patch targets in `codecov.yml`). The ubuntu / Python 3.13 CI job uploads
   to Codecov and fails if the upload fails. The upload authenticates through GitHub OIDC
   (`use_oidc`), so it needs no `CODECOV_TOKEN` secret.
-- Tests never touch SPICE kernels or spicedb. The host tests belong in `tests/oops/`, whose
-  `conftest.py` replaces them with fakes for every test, as rms-host-galileo's does.
+- Tests never touch SPICE kernels or spicedb. The host tests belong in `tests/oops/`,
+  whose `conftest.py` replaces them with fakes for every test, as rms-host-galileo's
+  does. It also copies the oops Path and Frame registries, caches, and per-class
+  waypoint and wayframe pools for each test (`_WAYPOINTS`, `_WAYFRAMES`, `_FOR_NAME`,
+  `_FRAME_LOOKUP`), because oops gives a path or frame defined exactly as an earlier
+  one that one's ID; keep any new oops global state in that fixture (rms-oops#250).
 
 ## Architecture gotchas
 
@@ -94,9 +101,10 @@ apply here to the stubs described below.
   the `time_from_sclk` subfield is then True (operator, 2026-11-19). The count's time
   is a median of 0.9 s after `STOP_TIME` (79% within 3 s) on the 76,635 raw images
   that give both, whole FDS minutes later for most of the rest, and more than a second
-  earlier for 12 (up to 7,625 s, C4201035), so such a time can be off by minutes. The default frame is an unregistered `Cmatrix` relative to J2000, from
-  the record found by the clock count (`_camera_frame()`, tolerance 20 ticks). Labels and
-  VICAR headers give no clock partition (the supplement does);
+  earlier for 12 (up to 7,625 s, C4201035), so such a time can be off by minutes. The
+  default frame is an unregistered `Cmatrix` relative to J2000, from the record found by
+  the clock count (`_camera_frame()`, tolerance 20 ticks). Labels and VICAR headers give
+  no clock partition (the supplement does);
   `_Voyager.sclk_ticks()` picks the partition nearest `STOP_TIME`, or, without a time,
   nearest `EARTH_RECEIVED_TIME` (label, index, or the header's `LAB04` ERT), or, without
   that either, the one partition that puts the count in one of
@@ -117,7 +125,8 @@ apply here to the stubs described below.
   error action, around `sclk_ticks()`, `ckgp` and `pxform`, and then returns an
   `oops.frame.SpiceErrorFrame` (rms-oops's shared form, used by all four hosts), which
   raises that error whenever it is evaluated. `from_file()` evaluates the frame at the
-  midtime, so it raises at load time; `from_index()` does not, so it keeps the row. Neither checks anything when a `frame` override is given. An image
+  midtime, so it raises at load time; `from_index()` does not, so it keeps the row.
+  Neither checks anything when a `frame` override is given. An image
   for which no source read gives the exposure, camera, spacecraft, a time or a clock
   count, or (without a `frame` override) a clock count raises
   `oops.host.HostFormatError`, naming the items and the file, from both methods; a
@@ -131,48 +140,52 @@ apply here to the stubs described below.
   Systems Node metadata, one row per RAW image, never the full `VGISS_xxxx_index.lbl`
   (one row per label: RAW, CLEANED, CALIB, GEOMED and the reseau and tiepoint tables),
   because OPUS archives only the raw images. A volume's own index, any label in a
-  directory named `INDEX` (such as `VGISS_6109/INDEX/RAWIMAGES.LBL`, whose `^INDEX_TABLE`
-  points to an object named `TABLE`), raises `HostIndexError` at call time, before
-  anything is read, with a message pointing to the metadata index. The
-  preexisting `VGISS_xxxx_supplemental_index.lbl` matches the raw image index row for
-  row, so the two join through `oops.Host._read_index_rows()`. The default
-  `oops.Host.SUPPLEMENT` search would look for `..._raw_image_supplemental_index`, so for
-  that default the host names the supplement itself by replacing `_raw_image_index` with
-  `_supplemental_index`. The supplement is required: `supplement=None` raises
-  `HostIndexError` unless `row_dicts` is given (then the rows are used as given).
-  `label=` goes to `_read_index_rows()`; `select` other than None raises
-  `OopsValueError` and any unknown keyword `OopsTypeError` (the from_index contract of
-  rms-oops #240, as rms-host-galileo has it). Every index label gives
+  directory named `INDEX` in either case (such as `VGISS_6109/INDEX/RAWIMAGES.LBL`, whose
+  `^INDEX_TABLE` points to an object named `TABLE`), raises `HostIndexError` at call
+  time, before any table is read, with a message pointing to the metadata index; oops
+  does this from `METADATA_INDEX_EXAMPLE`. The `VGISS_xxxx_supplemental_index.lbl`
+  matches the raw image index row for row. The default `oops.Host.SUPPLEMENT` search
+  would look for `..._raw_image_supplemental_index`, so the host overrides
+  `_supplement_path()` to replace `_raw_image_index` with `_supplemental_index`, and to
+  raise `HostIndexError` for an index whose name lacks it. The supplement is required:
+  `supplement=None` raises `HostIndexError` unless `row_dicts` is given. `select` other
+  than None raises `OopsValueError` and any unknown keyword `OopsTypeError`, through
+  `oops.Host._check_select()` and `_check_keywords()`. Every index label gives
   `EXPOSURE_DURATION` `BYTES = 7` where the field and its `FORMAT` "F9.4" are 9 wide, so
-  `_index_label()` widens any column to its FORMAT width before the table is read
-  (1,597 of 76,652 rows lose digits otherwise, and the null -99.9999 reads -99.99).
-  `oops.Host.from_index()` identifies the host from the index label's `DATA_SET_ID`
+  `_index_label()` widens a column to its FORMAT width where the label gives fewer bytes
+  (1,597 of 76,652 rows lose digits otherwise, and the null -99.9999 reads -99.99). It is
+  decided from each label, so a corrected label is read as it is; the problem is item 1
+  of SETI/rms-data-projects#260, which lists every index problem the host works around
+  until the index files are corrected.
+- `oops.Host.from_index()` identifies the host from the index label's `DATA_SET_ID`
   (`_detect_in_index()`; every VGISS index label, metadata or volume, gives one such as
   "VG1/VG2-S-ISS-2/3/4/6-PROCESSED-V1.0") and passes the call, every argument included,
-  to `VoyagerISS.from_index()`, which reads the rows; `oops.Host._read_index_rows()` pairs
-  them by position when the two tables list the same files in the same order (every
-  VGISS volume does) and otherwise by `VOLUME_NAME` and `FILE_SPECIFICATION_NAME`, its
-  default file key. Rows given without `STOP_TIME` (read without the supplement and the
-  repair) are replaced by the host's own reading of the same
-  rows, matched by `VOLUME_NAME` and `FILE_SPECIFICATION_NAME`; naming the supplement
-  rejects the rows of a full index. The table reader's `_mask` entries are dropped; the
-  only declared null constants (exposure -99.9999, supplement `UNK` times), the
-  `UNKNOWN` that the indexes give for `EARTH_RECEIVED_TIME` (1,524 rows) and `IMAGE_ID`
-  (250), the empty `NOTE` (36,095), and the placeholder `IMAGE_ID`
-  `0000Z1+000`/`0000Z2+000` (34 rows) never stand for real values. The supplement adds `START_TIME` and `STOP_TIME` with fractional
-  seconds; the index's `IMAGE_TIME` has whole seconds. Each Snapshot's `filepath`,
-  `basename` and `image_url` name the raw image file (`PRODUCT_ID`), never the label in
-  `FILE_SPECIFICATION_NAME`, as a full path or URL: `_index_image_path()` maps an index
-  in `<holdings>/metadata/VGISS_6xxx/VGISS_6109/` to the volume
-  `<holdings>/volumes/VGISS_6xxx/VGISS_6109/`, and an index anywhere else to the
-  directory `VOLUME_NAME` beside it (the index's directory holds the volumes, the rule
-  all four hosts share). `oops.Host._apply_overrides()` names the file: `abspath` only
-  for an image file that exists locally or a remote one already in the cache, and it
-  never creates a directory (it uses `get_local_path(create_parents=False)`).
-- `from_index()` returns an iterator. It checks its arguments and reads and filters the
-  tables itself, then returns a generator that builds each row's Snapshot when the
-  iteration reaches it, so only an error in one row waits for that row. It must not be a
-  generator function, which would defer every error to the first `next()`.
+  to `VoyagerISS.from_index()`. That reads nothing itself: `oops.Host._index_rows()`
+  reads the labels at call time and streams the rows of both tables with
+  `PdsTable(defer_load=True).iter_dicts`, ten at a time, pairing them by position because
+  `MERGE_SUPPLEMENT_BY_FILE` is False. A survey of all 182 raw image indexes (the 91 in
+  the metadata tree and their `_v1.0` copies) found every supplement equal in length and
+  in agreement on `VOLUME_NAME`, `FILE_SPECIFICATION_NAME` and `PRODUCT_ID` row for row.
+  A row whose files differ raises `HostIndexError` at that row. The default validation
+  compares `PRODUCT_ID`, the one column the tables share beyond the file key. Given
+  `row_dicts` are used as they are and filtered lazily; nothing reads a whole table. The
+  table reader's `_mask` entries are dropped; the only declared null constants (exposure
+  -99.9999, supplement `UNK` times), the `UNKNOWN` that the indexes give for
+  `EARTH_RECEIVED_TIME` (1,524 rows) and `IMAGE_ID` (250), the empty `NOTE` (36,095),
+  and the placeholder `IMAGE_ID` `0000Z1+000`/`0000Z2+000` (34 rows) never stand for
+  real values. The supplement adds `START_TIME` and `STOP_TIME` with fractional seconds;
+  the index's `IMAGE_TIME` has whole seconds. Each Snapshot's `filepath`, `basename` and
+  `image_url` name the raw image file (`PRODUCT_ID`), never the label in
+  `FILE_SPECIFICATION_NAME`, as a full path or URL: `_index_image_path()` puts the
+  volume `VOLUME_NAME` in `oops.Host._volumes_directory()` of the index, which maps
+  `<holdings>/metadata/VGISS_6xxx/VGISS_6109/` to `<holdings>/volumes/VGISS_6xxx/` and
+  any other index to its own directory. `oops.Host._apply_overrides()` names the file:
+  `abspath` only for an image file that exists locally or a remote one already in the
+  cache, and it never creates a directory.
+- `from_index()` returns an iterator. It checks its arguments and gets the row iterator
+  from `_index_rows()`, then returns a generator expression that builds each row's
+  Snapshot when the iteration reaches it. It must not be a generator function, which
+  would defer every call-time error to the first `next()`.
 - VGISS indexes name the volume in `VOLUME_NAME`, not `VOLUME_ID`, and the camera in
   `INSTRUMENT_NAME` ("NARROW ANGLE CAMERA" or "WIDE ANGLE CAMERA"). The index label
   names the host and instrument only in `DATA_SET_ID`, which `_detect_in_index()`
@@ -200,8 +213,8 @@ apply here to the stubs described below.
   `---` and empty text in any case, None, a list of nulls, -99.9999 in the index, and
   the `IMAGE_ID` placeholder `0000Zn+000`) counts as missing, also inside a label
   OBJECT (`dict['IMAGE']['REFLECTANCE_SCALING_FACTOR']` 'UNK' on some products);
-  `label_dict` and `header_dict` keep them. A subfield no source gives is absent, never None
-  (`if_scale` included). `calibrations` is `[FlatCalib('I/F', if_scale)]` when
+  `label_dict` and `header_dict` keep them. A subfield no source gives is absent, never
+  None (`if_scale` included). `calibrations` is `[FlatCalib('I/F', if_scale)]` when
   `if_scale` is present, else empty (it matches the label's REFLECTANCE_SCALING_FACTOR,
   which the rms-oops host read, except for the 3.345 factor on Voyager 1 Saturn).
   `dict` is the merged metadata plus every other key of each source (`LABEL3`, ...), but
@@ -213,9 +226,11 @@ apply here to the stubs described below.
   END) and
   `header_dict` the header (`as_dict(unique=True)`, a repeated parameter keyed
   `TASK[0]`, `TASK[1]`, ...), each only when read; all three are JSON. A `VicarImage`
-  rewrites `HOST` (and `BHOST`) with the reading machine when it reads the array, so a
-  full read takes the header from the file's `VicarLabel` (`_header_as_written()`), and
-  `header_dict` matches an astrometry read. `from_file()` raises `OopsTypeError` for an
+  rewrites `HOST` (and `BHOST`) with the reading machine when it reads the array, so the
+  header of any `VicarImage` with a file path, read by the host or given by the caller,
+  in a full or an astrometry read, comes from the file's `VicarLabel`
+  (`_header_as_written()`), and `header_dict` is the same from every input that reads
+  the header. `from_file()` raises `OopsTypeError` for an
   unknown keyword and `OopsValueError` for a `select` other than None, as
   `from_index()` does; `oops.Host.from_file()` passes the path and the caller's
   arguments unchanged, so both entry points give the same Snapshot. `spacecraft`, the

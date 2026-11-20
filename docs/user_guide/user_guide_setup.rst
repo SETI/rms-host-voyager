@@ -82,6 +82,6 @@ Later calls to :meth:`~host_voyager.oops.iss.VoyagerISS.initialize` have no effe
 Image files and indexes
 =======================
 
-The host needs no environment variable for the archive itself. Each image file, PDS3
-label, or index is passed by its path or URL, and a remote file is retrieved and cached
+Each image file, PDS3 label, or index is passed by its path or URL, so the archive
+itself is found without an environment variable. A remote file is retrieved and cached
 when it is read.

@@ -15,7 +15,7 @@ The detectors and support methods that a Host subclass overrides or calls, such 
 """
 
 import pathlib
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from typing import Any
 
 from filecache import FCPath
@@ -66,18 +66,24 @@ class VoyagerISS(Host):
         timeshift: tuple[float, str] | None = None,
         navigation: tuple[float, ...] | None = None, tracker: str | None = None,
         parallel: Observation | None = None, **kwargs: Any) -> Snapshot: ...
+    # Every VGISS supplement lists the images of its raw image index in the same order,
+    # so the rows of the two tables are paired by position.
+    MERGE_SUPPLEMENT_BY_FILE: bool
+    METADATA_INDEX_EXAMPLE: str | None
     # Every row is one Snapshot. Only a raw image index of the Ring-Moon Systems Node
     # metadata is read; a volume's own index raises oops.host.HostIndexError. The
     # supplement is required: None raises oops.host.HostIndexError unless row_dicts is
     # given. select must be None (oops.OopsValueError), and any other keyword raises
-    # oops.OopsTypeError. The iterator builds each row's Snapshot when it reaches the
-    # row.
+    # oops.OopsTypeError. The call reads only the labels; the iterator reads the rows of
+    # the index and its supplement a few at a time, in step, and builds each row's
+    # Snapshot when it reaches the row. A row whose files differ between the two tables
+    # raises oops.host.HostIndexError at that row.
     @staticmethod
     def from_index(
         filepath: str | pathlib.Path | FCPath, *,
         supplement: str | pathlib.Path | FCPath | object | None = ...,
         label: Pds3Label | None = None,
-        row_dicts: list[dict[str, Any]] | None = None,
+        row_dicts: Iterable[dict[str, Any]] | None = None,
         pds3_options: dict[str, Any] | None = None,
         filter: dict[str, Any] | None = None, return_all_planets: bool = False,
         select: int | slice | str | tuple[int | slice | str, ...] | None = None,

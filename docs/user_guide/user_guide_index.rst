@@ -8,10 +8,12 @@ index tables and opens none of the images, which makes it much faster than openi
 volume's images one at a time.
 
 It returns an iterator, which gives the Snapshots row by row, in the order of the index.
-The call itself checks the arguments and reads the index, so a wrong argument or an index
-that cannot be read raises an error at once. Each row's Snapshot is built only when the
-iteration reaches that row, so an error in a row is raised there, after the rows before
-it. To build every row at once, pass the iterator to ``list()``:
+The call itself checks the arguments and reads the PDS3 labels of the index and its
+supplement, so a wrong argument or a label that cannot be read raises an error at once.
+The iteration then reads the rows of the two tables a few at a time and builds each
+row's Snapshot when it reaches that row. Only those few rows are held in memory, however
+long the index. An error in a row is raised when the iteration reaches it, after the
+rows before it. To build every row at once, pass the iterator to ``list()``:
 
 .. code-block:: python
 
@@ -23,8 +25,8 @@ it. To build every row at once, pass the iterator to ``list()``:
 
    snapshots = list(VoyagerISS.from_index(index))
 
-An error in a row ends the iteration, and the iterator gives no rows after it. To reach
-the rows that follow, leave that row out with the ``filter`` argument, described below.
+An error in a row ends the iteration there. To reach the rows that follow, leave that
+row out with the ``filter`` argument, described below.
 
 The index and its supplement
 ============================
@@ -52,17 +54,19 @@ The ``supplement`` argument chooses the supplemental index:
 - A path or URL reads that file instead.
 - None raises :exc:`~oops.host.HostIndexError`, unless ``row_dicts`` is given.
 
-The two tables must list the same images, but not necessarily in the same order. When
-they list them in the same order, as every VGISS volume does, each index row is merged
-with the supplement row in the same position. When they do not, each index row is
-merged with the supplement row that has the same ``VOLUME_NAME`` and
-``FILE_SPECIFICATION_NAME``. The host raises :exc:`~oops.host.HostIndexError` if an image
-appears in only one of the tables, or if, when the orders differ, either table lists an
-image twice. The error gives the first few such images and both tables.
+Every VGISS supplement lists the same images as its index, in the same order, so the
+host reads the two tables in step and merges each index row with the supplement row in
+the same position. As it does, it checks that the two rows give the same file. If they
+do not, the iteration raises :exc:`~oops.host.HostIndexError` at that row, giving the row
+number, counted from 0, the file that each table gives, and both tables. The same error
+is raised if the supplement ends before the index, and, after the last row, if the
+supplement has more rows than the index.
 
 The labels of the raw image indexes give the ``EXPOSURE_DURATION`` column a width of 7
 bytes, while its format and the table itself give it 9. Read as the labels say, an
-exposure of 0.0075 s would become 0.0 s. The host reads the column at its full width.
+exposure of 0.0075 s would become 0.0 s. Until the labels are corrected, the host widens
+any column whose format is wider than its width in the label, so it reads this column at
+its full width. A corrected label is read as it is.
 
 Other arguments
 ===============
@@ -71,18 +75,18 @@ Other arguments
     The index's PDS3 label, if it has already been parsed.
 
 ``row_dicts``
-    The rows themselves, one dictionary per row, if the tables have already been read.
-    Rows that hold the supplement's ``STOP_TIME`` column are used as they are, and so is
-    any row when ``supplement`` is None. Rows without that column, such as rows read
-    from the index alone, are read again from the index and its
-    supplement, matched by ``VOLUME_NAME`` and ``FILE_SPECIFICATION_NAME``, so that they
-    too have the supplement's columns and the whole exposure.
+    The rows themselves, one dictionary per row, already merged with the supplement, if
+    the tables have already been read. Any iterable works, a generator included. The
+    rows are used as they are, and the tables are not read. Each row is filtered and
+    built when the iteration reaches it. A row read from the index alone has no
+    ``STOP_TIME`` and no clock partition, so its time is the index's ``IMAGE_TIME``,
+    which is to the second.
 
 ``filter``
     A dictionary of column names and the values to keep. A row is kept when each column
     equals its value, is one of a set of values, or falls in a range given as a tuple of
-    two values. A column that the index does not have raises an error that gives the
-    column.
+    two values. Each row is tested when the iteration reaches it. A column that neither
+    table has raises an error that gives the column, when the call is made.
 
 ``select``
     Must be None. Each row is one image, so there is nothing to select, and any other
@@ -109,13 +113,13 @@ is known.
 
 The subfields are those of an image read from its label (see
 :doc:`user_guide_metadata`), except ``data``, ``label_dict``, ``header_dict``, and
-``if_scale``, so an index row has no calibration. The supplement gives every row its
-clock partition, which a label does not give.
+``if_scale``, so the ``calibrations`` of an index row is an empty list. The supplement
+gives every row its clock partition, which a label does not give.
 
 Every row gives a Snapshot, unless a row lacks an item that the host cannot do without
 (see :doc:`user_guide_errors`). One row does: the dark frame ``C3940530`` of VGISS_6201
-gives no exposure, so the iteration over that volume's index raises
-:exc:`~oops.host.HostFormatError` at that row and gives no rows after it. To read the
+lacks an exposure, so the iteration over that volume's index raises
+:exc:`~oops.host.HostFormatError` at that row and ends there. To read the
 rest of that volume, use ``filter`` to keep only the rows you want, such as a range of
 ``IMAGE_NUMBER`` values that starts after the dark frame.
 
@@ -146,7 +150,8 @@ Reading an index through oops.Host
 
 :meth:`oops.host.Host.from_index` recognizes a VGISS index from the ``DATA_SET_ID`` in its
 PDS3 label, such as ``VG1/VG2-S-ISS-2/3/4/6-PROCESSED-V1.0``, and passes the index, with
-all of its other arguments, to :meth:`~host_voyager.oops.iss.VoyagerISS.from_index`. The
-host reads the rows itself, with the supplement and the full width of the exposure
-column, so the two give the same Snapshots, also when ``supplement`` gives a path. A
-volume's own index raises the same :exc:`~oops.host.HostIndexError` either way.
+all of its other arguments, to :meth:`~host_voyager.oops.iss.VoyagerISS.from_index`.
+Recognizing the index reads only its label. The host then reads the rows itself, a few
+at a time, with the supplement and the full width of the exposure column, so the two
+give the same Snapshots, also when ``supplement`` gives a path. A volume's own index
+raises the same :exc:`~oops.host.HostIndexError` either way.
