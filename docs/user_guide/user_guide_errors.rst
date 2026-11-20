@@ -58,9 +58,6 @@ Reading a PDS3 index
 :exc:`~oops.host.HostIndexError`
     When the call is made, any of these:
 
-    - The index is one that a volume keeps in its own ``INDEX`` directory, such as
-      ``RAWIMAGES.LBL``, which the host does not read. The message points to the
-      metadata index. This is checked before any file is read.
     - ``supplement`` is left at its default, and the index's file name lacks the
       ``_raw_image_index`` from which the host finds the supplement. This is checked
       when ``row_dicts`` is given too.

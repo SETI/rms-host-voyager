@@ -2058,50 +2058,12 @@ def test_from_index_requires_a_raw_image_index(tmp_path: pathlib.Path) -> None:
         VoyagerISS.from_index(copy)
 
 
-def _volume_index(directory: pathlib.Path, index_dir: str = 'INDEX') -> pathlib.Path:
-    """A copy of the test index where a volume keeps its own index, in the directory
-    `index_dir`; its path."""
-
-    index = directory / 'VGISS_6109' / index_dir / 'RAWIMAGES.LBL'
-    index.parent.mkdir(parents=True)
-    shutil.copy(INDEX, index)
-    shutil.copy(INDEX.with_suffix('.tab'), index.parent)
-    return index
-
-
-@pytest.mark.parametrize('host', [VoyagerISS, oops.Host], ids=['iss', 'oops-host'])
-def test_from_index_refuses_a_volumes_own_index(tmp_path: pathlib.Path,
-                                                host: Any) -> None:
-    with pytest.raises(oops.host.HostIndexError,
-                       match=r"Voyager ISS reads the Ring-Moon Systems Node metadata "
-                             r"index, .* not a volume's own index: .*RAWIMAGES\.LBL$"):
-        host.from_index(_volume_index(tmp_path), supplement=SUPPLEMENT)
-
-
-def test_from_index_refuses_a_volumes_own_index_before_reading_it(
-        tmp_path: pathlib.Path) -> None:
-    """The refusal comes first, so a volume's index whose label is missing gives the
-    same error."""
-
-    index = tmp_path / 'VGISS_6109' / 'INDEX' / 'RAWIMAGES.LBL'
-    with pytest.raises(oops.host.HostIndexError, match="not a volume's own index"):
-        VoyagerISS.from_index(index, supplement=SUPPLEMENT)
-
-
 def test_from_index_refuses_the_rows_of_the_full_index() -> None:
     """The name of the index is checked when rows are given too."""
 
     with pytest.raises(oops.host.HostIndexError, match='needs a raw image index'):
         VoyagerISS.from_index(INDEX.with_name('VGISS_6109_index.lbl'),
                               row_dicts=_merged_rows())
-
-
-def test_from_index_refuses_a_volumes_own_index_in_lower_case(
-        tmp_path: pathlib.Path) -> None:
-    """A copy of a volume with lower-case names keeps its index in "index"."""
-
-    with pytest.raises(oops.host.HostIndexError, match="not a volume's own index"):
-        VoyagerISS.from_index(_volume_index(tmp_path, 'index'), supplement=SUPPLEMENT)
 
 
 def test_from_index_uses_given_rows_as_they_are() -> None:

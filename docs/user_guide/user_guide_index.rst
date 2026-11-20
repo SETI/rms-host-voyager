@@ -31,21 +31,17 @@ row out with the ``filter`` argument, described below.
 The index and its supplement
 ============================
 
-The host reads the PDS3 indexes that the Ring-Moon Systems Node keeps in the
-``metadata`` tree of its holdings. For each VGISS volume, these are the raw image index,
-such as ``VGISS_6109_raw_image_index.lbl``, which has one row per raw image, and the
+``from_index()`` reads a metadata index of the Ring-Moon Systems Node holdings and its
+supplemental index. For each VGISS volume, these are the raw image index, such as
+``VGISS_6109_raw_image_index.lbl``, which has one row per raw image, and the
 supplemental index, ``VGISS_6109_supplemental_index.lbl``, whose rows give further
 values for the same images. The host needs both. Each row of the supplement is merged
 into the matching row of the index; where both tables give a column, the index's value
 is kept.
 
-Two other PDS3 indexes are not accepted, and both raise
-:exc:`~oops.host.HostIndexError`. One is the index of every product,
-``VGISS_6109_index.lbl``, which has a row for each product of each image. The other is
-an index that a volume keeps in its own ``INDEX`` directory, such as
-``VGISS_6109/INDEX/RAWIMAGES.LBL``, which has no supplement. The error's message points
-to the metadata index. Both are refused when the call is made, also when ``row_dicts``
-is given, and a volume's own index is refused before any file is read.
+The metadata index of every product, ``VGISS_6109_index.lbl``, which has a row for each
+product of each image, is not accepted. It raises :exc:`~oops.host.HostIndexError` when
+the call is made, also when ``row_dicts`` is given.
 
 The ``supplement`` argument chooses the supplemental index:
 
@@ -157,5 +153,4 @@ PDS3 label, such as ``VG1/VG2-S-ISS-2/3/4/6-PROCESSED-V1.0``, and passes the ind
 all of its other arguments, to :meth:`~host_voyager.oops.iss.VoyagerISS.from_index`.
 Recognizing the index reads only its label. The host then reads the rows itself, a few
 at a time, with the supplement and the full width of the exposure column, so the two
-give the same Snapshots, also when ``supplement`` gives a path. A volume's own index
-raises the same :exc:`~oops.host.HostIndexError` either way.
+give the same Snapshots, also when ``supplement`` gives a path.

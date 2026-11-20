@@ -159,9 +159,9 @@ _IF_LINE_UNITS = 10000.
 # indexes give EARTH_RECEIVED_TIME "UNKNOWN" (1,524 rows) and IMAGE_ID "UNKNOWN" (250
 # rows) where the labels give "UNK", and NOTE "" (36,095 rows). Until the index is
 # corrected, "UNKNOWN" is read as missing. A corrected table gives "UNK", which is
-# missing too. SETI/rms-data-projects#260 item 5. No VGISS index table, in the metadata
-# tree or in a volume's INDEX directory, gives "NOT APPLICABLE", which oops counts as a
-# placeholder too (grep of every one, 2026-11-19).
+# missing too. SETI/rms-data-projects#260 item 5. No VGISS metadata index table gives
+# "NOT APPLICABLE", which oops counts as a placeholder too (grep of every one,
+# 2026-11-19).
 _NULL_NUMBER = -99.9999
 
 # Placeholders that stand for an unknown value of one item and are never a real value of
@@ -469,7 +469,6 @@ class VoyagerISS(oops.Host):
     # VOLUME_NAME, FILE_SPECIFICATION_NAME, and PRODUCT_ID columns of both tables, found
     # every pair of tables equal in length and in agreement on every row, 306,608 rows.
     MERGE_SUPPLEMENT_BY_FILE = False
-    METADATA_INDEX_EXAMPLE = 'VGISS_6109_raw_image_index.lbl'
 
     _FOVS = {}
     _initialized = False
@@ -947,6 +946,7 @@ class VoyagerISS(oops.Host):
                    **kwargs):
         """An iterator over Snapshots, one for each row of a Voyager ISS raw image index.
 
+        It reads a Ring-Moon Systems Node metadata raw image index and its supplement.
         The call checks the arguments and reads the labels of the index and its
         supplement. The iteration then reads the rows of both tables a few at a time, in
         step, and builds each row's Snapshot when it reaches that row, so the tables are
@@ -956,8 +956,7 @@ class VoyagerISS(oops.Host):
             filepath (str | pathlib.Path | FCPath): The path to the PDS label of a VGISS
                 raw image index, such as "VGISS_6109_raw_image_index.lbl", which has one
                 row per raw image, as the PDS Ring-Moon Systems Node metadata holds it.
-                The index of every product, "VGISS_6109_index.lbl", is not accepted, nor
-                is a volume's own index, such as "VGISS_6109/INDEX/RAWIMAGES.LBL".
+                The index of every product, "VGISS_6109_index.lbl", is not accepted.
             supplement (str | pathlib.Path | FCPath | object, optional): The path to the
                 PDS label of the supplemental index, whose columns are merged into each
                 row; a raw image index needs its supplement. Its rows must list the same
@@ -1080,20 +1079,18 @@ class VoyagerISS(oops.Host):
                 row.
             FileNotFoundError: If the supplement's label does not exist, when the call is
                 made; if a table file does not exist, when the iteration starts.
-            oops.host.HostIndexError: When the call is made: if `filepath` is a volume's
-                own index, in a directory named INDEX in either case, before any file is
-                read; if `supplement` is None while `row_dicts` is not given; if
-                `supplement` is `oops.Host.SUPPLEMENT` and the name of `filepath` lacks
-                "_raw_image_index", also when `row_dicts` is given; or if a label does
-                not describe a table that can be read, as when it lacks the table it
-                points to. During the iteration, counting rows from 0: at a row where the
-                index row and the supplement row in the same position give different
-                files; at the row where the supplement ends before the index; after the
-                last row a table holds, if it holds fewer rows than its label says; at
-                the first of the ten rows read with a row longer than the label's row
-                length, none of which is yielded; and after the last row, if the
-                supplement has more rows than the index or a table more rows than its
-                label says.
+            oops.host.HostIndexError: When the call is made: if `supplement` is None
+                while `row_dicts` is not given; if `supplement` is `oops.Host.SUPPLEMENT`
+                and the name of `filepath` lacks "_raw_image_index", also when
+                `row_dicts` is given; or if a label does not describe a table that can
+                be read, as when it lacks the table it points to. During the iteration,
+                counting rows from 0: at a row where the index row and the supplement row
+                in the same position give different files; at the row where the
+                supplement ends before the index; after the last row a table holds, if it
+                holds fewer rows than its label says; at the first of the ten rows read
+                with a row longer than the label's row length, none of which is yielded;
+                and after the last row, if the supplement has more rows than the index or
+                a table more rows than its label says.
             oops.host.PdsHostError: If the label of `filepath` or of the supplement cannot
                 be parsed.
             oops.host.WrongHostError: If `filepath` is not a Voyager ISS index.
@@ -1117,7 +1114,7 @@ class VoyagerISS(oops.Host):
         # The rows are read, paired by position with the supplement's, and filtered as
         # the iteration proceeds; the call reads only the labels. Given rows are used as
         # they are, so the index label is needed only to read the tables. The name of the
-        # index is checked either way, after the refusal of a volume's own index.
+        # index is checked either way.
         if row_dicts is None:
             label = VoyagerISS._index_label(filepath, label, pds3_options)
         rows = VoyagerISS._index_rows(filepath, supplement=supplement, label=label,
@@ -1241,9 +1238,6 @@ class VoyagerISS(oops.Host):
             BYTES already match its FORMAT keeps them.
 
         Raises:
-            oops.host.HostIndexError: If `filepath` is a volume's own index, in a
-                directory named INDEX in either case; this is checked before the label is
-                read.
             oops.host.PdsHostError: If the label cannot be parsed.
             oops.OopsValueError: If `pds3_options` holds an option that the parser does
                 not accept.
@@ -1705,8 +1699,8 @@ class VoyagerISS(oops.Host):
     def _detect_in_index(label):
         """Whether the given parsed index label describes this host's data.
 
-        A VGISS index label, in the metadata or in a volume's INDEX directory, names the
-        host and instrument only in its DATA_SET_ID, such as
+        A VGISS metadata index label names the host and instrument only in its
+        DATA_SET_ID, such as
         "VG1/VG2-S-ISS-2/3/4/6-PROCESSED-V1.0".
 
         Returns:

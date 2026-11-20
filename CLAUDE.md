@@ -153,12 +153,7 @@ apply here to the stubs described below.
 - `from_index()` accepts only a `VGISS_xxxx_raw_image_index.lbl` of the Ring-Moon
   Systems Node metadata, one row per RAW image, never the full `VGISS_xxxx_index.lbl`
   (one row per label: RAW, CLEANED, CALIB, GEOMED and the reseau and tiepoint tables),
-  because OPUS archives only the raw images. A volume's own index, any label in a
-  directory named `INDEX` in either case (such as `VGISS_6109/INDEX/RAWIMAGES.LBL`, whose
-  `^INDEX_TABLE` points to an object named `TABLE`), raises `HostIndexError` at call
-  time, before any file is read, with a message pointing to the metadata index; oops
-  does this from `METADATA_INDEX_EXAMPLE`, in `_read_index_label()` (which
-  `_index_label()` calls) and in `_index_rows()`. The `VGISS_xxxx_supplemental_index.lbl`
+  because OPUS archives only the raw images. The `VGISS_xxxx_supplemental_index.lbl`
   matches the raw image index row for row. The default `oops.Host.SUPPLEMENT` search
   would look for `..._raw_image_supplemental_index`, so the host overrides
   `_supplement_path()` to replace `_raw_image_index` with `_supplemental_index`, and to

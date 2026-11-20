@@ -71,16 +71,15 @@ class VoyagerISS(Host):
     # Every VGISS supplement lists the images of its raw image index in the same order,
     # so the rows of the two tables are paired by position.
     MERGE_SUPPLEMENT_BY_FILE: bool
-    METADATA_INDEX_EXAMPLE: str | None
-    # Every row is one Snapshot. Only a raw image index of the Ring-Moon Systems Node
-    # metadata is read; a volume's own index raises oops.host.HostIndexError before any
-    # file is read, and an index whose name lacks "_raw_image_index" raises it when the
-    # call is made. The supplement is required: None raises oops.host.HostIndexError
-    # unless row_dicts is given. select must be None (oops.OopsValueError), and any other
-    # keyword raises oops.OopsTypeError. The call reads only the labels; the iterator
-    # reads the rows of the index and its supplement a few at a time, in step, and builds
-    # each row's Snapshot when it reaches the row. A row whose files differ between the
-    # two tables raises oops.host.HostIndexError at that row.
+    # Every row is one Snapshot. A raw image index of the Ring-Moon Systems Node metadata
+    # is read with its supplement; an index whose name lacks "_raw_image_index" raises
+    # oops.host.HostIndexError when the call is made. The supplement is required: None
+    # raises oops.host.HostIndexError unless row_dicts is given. select must be None
+    # (oops.OopsValueError), and any other keyword raises oops.OopsTypeError. The call
+    # reads only the labels; the iterator reads the rows of the index and its supplement
+    # a few at a time, in step, and builds each row's Snapshot when it reaches the row. A
+    # row whose files differ between the two tables raises oops.host.HostIndexError at
+    # that row.
     @staticmethod
     def from_index(
         filepath: str | pathlib.Path | FCPath, *,
