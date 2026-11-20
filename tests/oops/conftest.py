@@ -36,7 +36,7 @@ INDEX_ROWS = 30
 STOP_TIME = '1980-10-29T05:57:22.00'
 CLOCK_COUNT = '34502:01:001'
 
-# The fake FDS clock. Partition 1 holds no count; partition 2 is placed so that
+# The fake FDS clock. Partition 1 refuses every count; partition 2 is placed so that
 # CLOCK_COUNT falls exactly at STOP_TIME; partition 3 starts one clock cycle later.
 FDS_HOUR = 2880.        # seconds
 FDS_MINUTE = 48.
@@ -188,7 +188,7 @@ class FakeSpice:
             `Body.define_solar_system`.
         spice_paths (list[tuple[str, str]]): The (SPICE name, path ID) of each SpicePath.
         ckgp (list[tuple[int, float, float, str]]): The arguments of each `cspyce.ckgp`.
-        missing (set[float]): Ticks at which `cspyce.ckgp` finds no record.
+        missing (set[float]): Ticks at which `cspyce.ckgp` lacks a record.
         pxform (list[tuple[str, str]]): The (from, to) frames of each `cspyce.pxform`.
         spkcov (list[tuple[str, int]]): The (file, body) of each `cspyce.spkcov`.
     """
@@ -276,8 +276,9 @@ def fake_spice(monkeypatch: pytest.MonkeyPatch) -> FakeSpice:
 
     # A path or frame defined exactly as an earlier one shares its waypoint or wayframe,
     # and so its ID, so each class's pool is copied too; otherwise a path or frame made by
-    # one test could decide the ID that an identical one gets in a later test. (rms-oops
-    # issue 250 asks for one helper that isolates all of this state.)
+    # one test could decide the ID that an identical one gets in a later test. Until oops
+    # offers one helper that isolates all of this state, the copies stay here.
+    # SETI/rms-oops#250
     for path_class in oops.Path._PATH_SUBCLASSES:
         if '_WAYPOINTS' in vars(path_class):
             monkeypatch.setattr(path_class, '_WAYPOINTS', dict(path_class._WAYPOINTS))

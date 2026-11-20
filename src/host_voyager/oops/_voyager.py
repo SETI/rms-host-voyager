@@ -306,10 +306,13 @@ class _Voyager:
             float: The encoded clock ticks.
 
         Raises:
-            ValueError: If the count falls in no partition, not in the one given, or,
-                with neither `partition` nor `near`, not in exactly one partition within
-                the imaging periods. Under the "RUNTIME" error action of cspyce, a count
-                not in the partition given raises RuntimeError instead.
+            oops.OopsSpiceError: If the count is outside every partition, or, with
+                neither `partition` nor `near`, the count falls in a number of partitions
+                within the imaging periods other than one. The message gives the count,
+                and no SPICE error code.
+            ValueError: If the count is not in the partition given, with the SPICE error
+                code SPICE(NOTINPART); under the "RUNTIME" error action of cspyce, it is
+                a RuntimeError instead.
         """
 
         naif_id = _Voyager.SPACECRAFT_IDS[vgr]
@@ -321,14 +324,17 @@ class _Voyager:
             # cspyce raises ValueError or RuntimeError, depending on its error action
             try:
                 ticks = cspyce.scencd(naif_id, f'{part}/{count}')
-            except (ValueError, RuntimeError) as err:
+            except oops.OopsSpiceError.CSPYCE_ERRORS as err:
                 if 'SPICE(NOTINPART)' in str(err):
                     continue
                 raise
             candidates.append((cspyce.sct2e(naif_id, ticks), ticks))
 
+        # These mean that the clock kernel cannot place the count, which is missing SPICE
+        # data, as the cspyce errors are
         if not candidates:
-            raise ValueError(f'Voyager {vgr} clock count {count} is in no partition')
+            raise oops.OopsSpiceError(f'Voyager {vgr} clock count {count} is outside '
+                                      'every clock partition')
         if near is not None:
             return min(candidates, key=lambda candidate: abs(candidate[0] - near))[1]
 
@@ -336,8 +342,9 @@ class _Voyager:
                   if any(start <= tdb <= stop
                          for (start, stop) in _IMAGING_PERIODS_TDB[vgr])]
         if len(inside) != 1:
-            raise ValueError(f'Voyager {vgr} clock count {count} is in {len(inside)} '
-                             'clock partitions within the imaging periods')
+            raise oops.OopsSpiceError(f'Voyager {vgr} clock count {count} is in '
+                                      f'{len(inside)} clock partitions within the '
+                                      'imaging periods')
         return inside[0]
 
     @staticmethod

@@ -42,8 +42,8 @@ class VoyagerISS(Host):
     # raises oops.OopsSpiceError if the clock kernel cannot convert the count. An image
     # for which no source read gives the exposure, camera, spacecraft, a time or a clock
     # count, or, unless `frame` is given, a clock count, raises
-    # oops.host.HostFormatError; a label that no parser method reads, or that names no
-    # IMAGE file, raises oops.host.PdsHostError; a VICAR file that cannot be read as an
+    # oops.host.HostFormatError; a label that no parser method reads, or that lacks an
+    # IMAGE pointer, raises oops.host.PdsHostError; a VICAR file that cannot be read as an
     # image raises oops.host.VicarHostError; another mission's file or parsed content
     # raises oops.host.WrongHostError. select must be None (oops.OopsValueError), and
     # any other keyword raises oops.OopsTypeError. Given the image file, only it is
@@ -71,7 +71,8 @@ class VoyagerISS(Host):
     MERGE_SUPPLEMENT_BY_FILE: bool
     METADATA_INDEX_EXAMPLE: str | None
     # Every row is one Snapshot. Only a raw image index of the Ring-Moon Systems Node
-    # metadata is read; a volume's own index raises oops.host.HostIndexError. The
+    # metadata is read; a volume's own index raises oops.host.HostIndexError before any
+    # file is read, and so does an index whose name lacks "_raw_image_index". The
     # supplement is required: None raises oops.host.HostIndexError unless row_dicts is
     # given. select must be None (oops.OopsValueError), and any other keyword raises
     # oops.OopsTypeError. The call reads only the labels; the iterator reads the rows of

@@ -341,8 +341,17 @@ def test_sclk_ticks_rejects_a_count_in_no_partition(monkeypatch: pytest.MonkeyPa
         raise ValueError('SPICE(NOTINPART)')
 
     monkeypatch.setattr('cspyce.scencd', no_partition)
-    with pytest.raises(ValueError, match=f'Voyager 1 clock count {CLOCK_COUNT} is in no '
-                                         'partition'):
+    with pytest.raises(oops.OopsSpiceError,
+                       match=f'^Voyager 1 clock count {CLOCK_COUNT} is outside every '
+                             'clock partition$'):
         _Voyager.sclk_ticks(1, CLOCK_COUNT, near=_STOP_TDB)
+
+
+def test_sclk_ticks_rejects_a_count_outside_the_imaging_periods() -> None:
+    # About 150 days before STOP_TIME, in partition 2, and 6 years later in partition 3
+    with pytest.raises(oops.OopsSpiceError,
+                       match=r'^Voyager 1 clock count 30000:00:001 is in 0 clock '
+                             r'partitions within the imaging periods$'):
+        _Voyager.sclk_ticks(1, '30000:00:001')
 
 ##########################################################################################

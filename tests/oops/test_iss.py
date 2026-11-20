@@ -170,10 +170,12 @@ def test_detect_in_vicar(label: dict[str, str], expected: bool) -> None:
     ({'DATA_SET_ID': 'VG2-U-ISS-2/3/4/6-PROCESSED-V1.0'}, True),
     ({'DATA_SET_ID': 'VG2-N-ISS-2/3/4/6-PROCESSED-V1.0'}, True),
     ({'DATA_SET_ID': 'VG1/VG2-SR-ISS-4-PROFILES-V1.0'}, False),
+    ({'DATA_SET_ID': 'VG2/VG1-S-ISS-2/3/4/6-PROCESSED-V1.0'}, False),
+    ({'DATA_SET_ID': 'VGG-S-ISS-2/3/4/6-PROCESSED-V1.0'}, False),
     ({'DATA_SET_ID': 'CO-S-ISSNA/ISSWA-2-EDR-V1.0'}, False),
     ({'VOLUME_ID': 'VGISS_6109'}, None),
-], ids=['jupiter', 'saturn', 'uranus', 'neptune', 'ring-profiles', 'cassini',
-        'no-data-set'])
+], ids=['jupiter', 'saturn', 'uranus', 'neptune', 'ring-profiles', 'reversed-pair',
+        'no-spacecraft-number', 'cassini', 'no-data-set'])
 def test_detect_in_index(label: dict[str, str], expected: bool | None) -> None:
     assert VoyagerISS._detect_in_index(label) is expected
 
@@ -323,7 +325,7 @@ def test_no_time_and_no_clock_count_is_a_format_error() -> None:
 
 
 def test_clock_count_the_clock_kernel_cannot_place_is_a_spice_error() -> None:
-    # Partition 1 holds no count in the fake clock
+    # Partition 1 of the fake clock refuses every count
     with pytest.raises(oops.OopsSpiceError,
                        match=r'^no Voyager 1 clock time for FDS count 34502:01:001 for '
                              r'VGISS_6109/X\.IMG: SPICE\(NOTINPART\)$'):
@@ -437,6 +439,15 @@ def test_missing_record_at_the_overridden_midtime(fake_spice: FakeSpice) -> None
         snapshot(cadence=cadence)
 
 
+def test_missing_record_at_the_frame_shifted_time(fake_spice: FakeSpice) -> None:
+    """A frame time shift evaluates the frame that many seconds after the midtime."""
+
+    fake_spice.missing.add(fake_scencd(-31, f'2/{CLOCK_COUNT}'))
+    with pytest.raises(oops.OopsSpiceError,
+                       match=r' at 1980-10-29T05:57:26\.040 for VGISS_6109/X\.IMG'):
+        snapshot(timeshift=(5., 'F'))
+
+
 def test_count_in_no_partition_is_a_spice_error() -> None:
     with pytest.raises(oops.OopsSpiceError) as info:
         snapshot(SPACECRAFT_CLOCK_PARTITION_NUMBER=1)
@@ -454,16 +465,26 @@ def test_missing_frame_connection_is_a_spice_error(
         snapshot()
 
 
-def test_missing_record_without_a_spice_code(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pointing_failure_without_a_spice_code_propagates(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only an exception whose text holds a SPICE error code is missing SPICE data."""
+
     def ckgp(*args: Any) -> None:
-        raise LookupError('no record')
+        raise LookupError('not a SPICE failure')
 
     monkeypatch.setattr(iss.cspyce, 'ckgp', ckgp)
-    with pytest.raises(oops.OopsSpiceError) as info:
+    with pytest.raises(LookupError, match=r'^not a SPICE failure$'):
         snapshot()
-    assert str(info.value) == (f'no Voyager 1 ISS NAC pointing at {MIDTIME} for '
-                               'VGISS_6109/X.IMG')
-    assert info.value.spice_code is None
+
+
+def test_clock_time_failure_without_a_spice_code_propagates(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    def sct2e(*args: Any) -> None:
+        raise ValueError('not a SPICE failure')
+
+    monkeypatch.setattr(iss.cspyce, 'sct2e', sct2e)
+    with pytest.raises(ValueError, match=r'^not a SPICE failure$'):
+        snapshot(STOP_TIME=None, IMAGE_TIME=None, SPACECRAFT_CLOCK_PARTITION_NUMBER=2)
 
 
 def test_missing_record_under_the_runtime_error_action(
@@ -816,6 +837,7 @@ def test_header_without_voyager_lines() -> None:
     ('UNKNOWN', True),
     ('', True),
     ('---', True),
+    ('NOT APPLICABLE', True),
     (-99.9999, True),
     (['UNK', 'N/A'], True),
     (['UNK', 1.], False),
@@ -823,7 +845,7 @@ def test_header_without_voyager_lines() -> None:
     ('NONE', False),
     (0., False),
 ], ids=['none', 'unk', 'lower-case-padded', 'null', 'unknown', 'empty', 'dashes',
-        'index-null', 'list-of-nulls',
+        'not-applicable', 'index-null', 'list-of-nulls',
         'list-with-a-value', 'empty-list', 'none-text', 'zero'])
 def test_is_null(value: Any, null: bool) -> None:
     assert iss._is_null(value) is null
@@ -1379,20 +1401,22 @@ def test_from_file_truncated_image_is_a_vicar_error(tmp_path: pathlib.Path,
 
 
 def test_from_file_label_without_an_image_pointer(tmp_path: pathlib.Path) -> None:
-    """A Voyager ISS label of a table, such as a RESLOC or GEOMA label, names no image."""
+    """A Voyager ISS label of a table, such as a RESLOC or GEOMA label, lacks an IMAGE
+    pointer."""
 
     label = tmp_path / 'C3450201_RESLOC.LBL'
     label.write_text('\r\n'.join(line for line in RAW_LABEL.read_text().splitlines()
                                  if not line.startswith('^IMAGE ')))
     with pytest.raises(oops.host.PdsHostError,
-                       match=r'names no IMAGE file: .*C3450201_RESLOC\.LBL$'):
+                       match=r'^Voyager ISS label lacks an \^IMAGE pointer: '
+                             r'.*C3450201_RESLOC\.LBL$'):
         VoyagerISS.from_file(label, astrometry=True)
 
 
 @pytest.mark.parametrize('astrometry', [False, True])
 def test_from_file_vicar_table_is_not_an_image(tmp_path: pathlib.Path,
                                                astrometry: bool) -> None:
-    """A Voyager ISS VICAR file of a table, such as a RESLOC or GEOMA file, holds no
+    """A Voyager ISS VICAR file of a table, such as a RESLOC or GEOMA file, is not an
     image."""
 
     # Like the real files, the table has no image lines
@@ -1400,7 +1424,7 @@ def test_from_file_vicar_table_is_not_an_image(tmp_path: pathlib.Path,
     text = image.read_bytes().replace(b"TYPE='IMAGE'", b"TYPE='TABULAR'")
     image.write_bytes(text.replace(b'  NL=8 ', b'  NL=0 ').replace(b'  N2=8 ', b'  N2=0 '))
     with pytest.raises(oops.host.VicarHostError,
-                       match=r'C3450201_RESLOC\.DAT holds no image'):
+                       match=r'C3450201_RESLOC\.DAT is not an image: TYPE is TABULAR$'):
         VoyagerISS.from_file(image, astrometry=astrometry)
 
 
@@ -1674,7 +1698,7 @@ def _write_vicar(directory: pathlib.Path, *, name: str = 'C3450201.IMG',
                  label3: str | None = None, lab02: str = _LAB02,
                  lab03: str = _LAB03, lab04: str = _LAB04,
                  lab05: str = _LAB05) -> pathlib.Path:
-    """Write a small Voyager VICAR image with no PDS3 label; return its path. The header
+    """Write a small Voyager VICAR image without a PDS3 label; return its path. The header
     holds LABEL3 if `label3` is given, the given LAB02, LAB03, LAB04 and LAB05, and the
     HOST of the archive's files, `_VICAR_HOST`."""
 
@@ -1787,26 +1811,38 @@ def test_from_index_reads_every_row() -> None:
 
 
 def test_rows_are_paired_by_position() -> None:
-    """Every VGISS supplement lists the images of its index in the same order."""
+    """Every VGISS supplement lists the images of its index in the same order. The class
+    sets the flag itself, so a change of the oops default cannot change it."""
 
+    assert 'MERGE_SUPPLEMENT_BY_FILE' in vars(VoyagerISS)
     assert VoyagerISS.MERGE_SUPPLEMENT_BY_FILE is False
 
 
 def test_from_index_call_reads_no_rows(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The call reads only the labels; the rows are read when the iteration starts."""
+    """The call reads only the labels; the rows are read when the iteration starts, a
+    few at a time, and neither table is ever loaded whole."""
 
     reads: list[Any] = []
+    loads: list[Any] = []
     iter_dicts = pdstable.PdsTable.iter_dicts
+    load = pdstable.PdsTable._load
 
     def spy(self: Any, *args: Any, **kwargs: Any) -> Any:
         reads.append(self)
         return iter_dicts(self, *args, **kwargs)
 
+    def load_spy(self: Any) -> Any:
+        loads.append(self)
+        return load(self)
+
     monkeypatch.setattr(pdstable.PdsTable, 'iter_dicts', spy)
+    monkeypatch.setattr(pdstable.PdsTable, '_load', load_spy)
     snapshots = VoyagerISS.from_index(INDEX)
     assert reads == []
+    assert loads == []
     next(snapshots)
     assert len(reads) == 2      # the index and the supplement
+    assert loads == []
 
 
 def _write_rows(table: pathlib.Path, edit: Any) -> None:
@@ -2018,6 +2054,24 @@ def test_from_index_refuses_a_volumes_own_index(tmp_path: pathlib.Path,
                        match=r"Voyager ISS reads the Ring-Moon Systems Node metadata "
                              r"index, .* not a volume's own index: .*RAWIMAGES\.LBL$"):
         host.from_index(_volume_index(tmp_path), supplement=SUPPLEMENT)
+
+
+def test_from_index_refuses_a_volumes_own_index_before_reading_it(
+        tmp_path: pathlib.Path) -> None:
+    """The refusal comes first, so a volume's index whose label is missing gives the
+    same error."""
+
+    index = tmp_path / 'VGISS_6109' / 'INDEX' / 'RAWIMAGES.LBL'
+    with pytest.raises(oops.host.HostIndexError, match="not a volume's own index"):
+        VoyagerISS.from_index(index, supplement=SUPPLEMENT)
+
+
+def test_from_index_refuses_the_rows_of_the_full_index() -> None:
+    """The name of the index is checked when rows are given too."""
+
+    with pytest.raises(oops.host.HostIndexError, match='needs a raw image index'):
+        VoyagerISS.from_index(INDEX.with_name('VGISS_6109_index.lbl'),
+                              row_dicts=_merged_rows())
 
 
 def test_from_index_refuses_a_volumes_own_index_in_lower_case(
