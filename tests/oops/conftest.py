@@ -224,8 +224,8 @@ def fake_spice(monkeypatch: pytest.MonkeyPatch) -> FakeSpice:
     follows the fake FDS clock above, every count has a C-kernel record given by
     :func:`record_matrix` unless its ticks are in `missing`, and each camera is rotated
     by PLATFORM_TO_CAMERA_ANGLE about the x-axis from its scan platform. The Path and
-    Frame registries are copied so that anything registered by one test never reaches
-    another.
+    Frame registries, caches, and waypoint and wayframe pools are copied so that paths
+    and frames made by one test never reach another.
     """
 
     fake = FakeSpice()
@@ -273,6 +273,18 @@ def fake_spice(monkeypatch: pytest.MonkeyPatch) -> FakeSpice:
     monkeypatch.setattr(oops.Path, '_PATH_CACHE', dict(oops.Path._PATH_CACHE))
     monkeypatch.setattr(oops.Frame, '_FRAME_REGISTRY', dict(oops.Frame._FRAME_REGISTRY))
     monkeypatch.setattr(oops.Frame, '_FRAME_CACHE', dict(oops.Frame._FRAME_CACHE))
+
+    # A path or frame defined exactly as an earlier one shares its waypoint or wayframe,
+    # and so its ID, so each class's pool is copied too; otherwise a path or frame made by
+    # one test could decide the ID that an identical one gets in a later test. (rms-oops
+    # issue 250 asks for one helper that isolates all of this state.)
+    for path_class in oops.Path._PATH_SUBCLASSES:
+        if '_WAYPOINTS' in vars(path_class):
+            monkeypatch.setattr(path_class, '_WAYPOINTS', dict(path_class._WAYPOINTS))
+    for frame_class in oops.Frame._FRAME_SUBCLASSES:
+        for pool in ('_WAYFRAMES', '_FOR_NAME', '_FRAME_LOOKUP'):
+            if pool in vars(frame_class):
+                monkeypatch.setattr(frame_class, pool, dict(getattr(frame_class, pool)))
     return fake
 
 
