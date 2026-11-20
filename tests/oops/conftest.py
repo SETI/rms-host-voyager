@@ -20,6 +20,7 @@ import numpy as np
 import oops
 import pytest
 import spicedb
+from filecache import FileCache
 
 from host_voyager.oops.iss import VoyagerISS
 
@@ -294,5 +295,13 @@ def body_path(monkeypatch: pytest.MonkeyPatch) -> oops.Path:
                                path_id='TITAN')
     oops.Body('TITAN', path, oops.Frame.J2000)
     return path
+
+
+@pytest.fixture
+def file_cache(tmp_path: pathlib.Path) -> FileCache:
+    """A file cache of this test's own, so that what other tests or programs retrieved
+    into the shared cache cannot change a test of whether a remote file is cached."""
+
+    return FileCache(cache_root=tmp_path / 'cache')
 
 ##########################################################################################

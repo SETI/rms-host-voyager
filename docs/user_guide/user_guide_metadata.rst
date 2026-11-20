@@ -69,13 +69,13 @@ some moons, so these spellings become the label's names:
 
 Where only one label gives an item, its value is used. Where both give it and agree,
 that value is used. Where both give it and disagree, the item always takes its value
-from the same label, for every image. For every item that both labels give, that label is
-the PDS3 label. The label's errors are small: about 800 labels give the exposure cut to
-0.01 s. The header's errors are large: for some images its clock count is one or two FDS
-minutes late, and it gives about 90 long exposures of 15 s or more as 5 or 240 ms. The
-notes in some labels also record corrections of the camera, the filter, or the time that
-the header does not have. If the PDS3 label gives no value for an item, the header's
-value is used.
+from the same label, for every image. The PDS3 label wins for every item, because where
+the two disagree, the PDS3 label is usually the one that is right. The label's errors
+are small: about 800 labels give the exposure cut to 0.01 s. The header's errors are
+large: for some images its clock count is one or two FDS minutes late, and it gives
+about 90 long exposures of 15 s or more as 5 or 240 ms. The notes in some labels also
+record corrections of the camera, the filter, or the time that the header does not have.
+If the PDS3 label gives no value for an item, the header's value is used.
 
 Missing values
 ==============
@@ -83,12 +83,18 @@ Missing values
 A value that no label read gives is left out: there is no ``dict`` key and no subfield
 for it, and never a None or a placeholder in its place. These count as no value:
 
-- the PDS3 null constants ``UNK``, ``N/A``, and ``NULL``, in any case, and a list of
-  nothing else;
+- the texts that the archive writes for an unknown value, ``UNK``, ``UNKNOWN``,
+  ``N/A``, ``NULL``, and ``---``, in any case, and empty text;
+- a list whose every element is one of these;
 - the placeholder picture numbers ``0000Z1+000`` and ``0000Z2+000`` of ``IMAGE_ID``;
 - a field of the VICAR header that the ground system filled with asterisks, such as
   ``SCET **.*** **:**:**``, or with a placeholder or unreadable bytes, such as the FDS
   count ``00000.00`` or an hour of 24 or more.
+
+The same holds inside the objects of a label. Some labels give
+``REFLECTANCE_SCALING_FACTOR`` in their ``IMAGE`` object as ``UNK``, and the ``IMAGE``
+entry of ``dict`` then has no such key. ``label_dict`` and ``header_dict`` keep every
+such value as the label or the header writes it.
 
 The dictionaries
 ================
@@ -108,10 +114,12 @@ type whichever label it came from.
     ``^IMAGE_offset``, are left out.
 
 ``header_dict``
-    Every parameter of the VICAR header, present only when the image file was read. A
-    parameter that occurs more than once, such as the ``TASK`` of each step of the
-    processing history, is keyed by its name and its occurrence counted from zero:
-    ``TASK[0]``, ``TASK[1]``, and so on.
+    Every parameter of the VICAR header as the file writes it, present only when the
+    image file was read. A read of the image array gives the same values as a read of
+    the header alone: ``HOST`` stays the machine that wrote the file, such as
+    ``AXP-VMS``. A parameter that occurs more than once, such as the ``TASK`` of each
+    step of the processing history, is keyed by its name and its occurrence counted from
+    zero: ``TASK[0]``, ``TASK[1]``, and so on.
 
 Subfields
 =========

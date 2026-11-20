@@ -64,10 +64,11 @@ as the ``if_scale`` subfield, the factor that converts the product's data to I/F
 observation then carries one calibration, an :class:`~oops.calibration.FlatCalib` named
 ``I/F`` with that factor.
 
-``if_scale`` comes only from the VICAR header, so it is absent, and the observation has no
-calibration, for a RAW or CLEANED product, for a PDS3 label read with
-``astrometry=True``, and for an index row. Check for the subfield before using it. The
-PDS3 label's ``REFLECTANCE_SCALING_FACTOR`` is not used: for the Voyager 1 images of
-Saturn it is 3.345 times larger than the header's factor.
+Only the VICAR header gives this factor. The header of a RAW or CLEANED product has no
+such line, and an astrometry read of a PDS3 label and a row of an index read no header
+at all. These observations have no ``if_scale`` subfield and no calibration, so check
+for the subfield before using it. The PDS3 label's
+``REFLECTANCE_SCALING_FACTOR`` is not used: for the Voyager 1 images of Saturn it is
+3.345 times larger than the header's factor.
 
 The ``calibrations`` override replaces the host's calibration.

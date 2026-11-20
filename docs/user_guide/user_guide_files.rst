@@ -52,10 +52,15 @@ An astrometry read does not look for the file, so its path subfields give the na
 the label spells it.
 
 The ``filepath``, ``basename``, ``abspath``, and ``image_url`` subfields always give the
-image file, also when the input is the label. After an astrometry read of a label, they
-give the file that the label points to, whether or not it exists. After an astrometry
-read of a remote label, the image file has not been retrieved, so ``abspath`` is absent
-unless an earlier read put the file in the local cache.
+image file, also when the input is the label. After an astrometry read of a label,
+``filepath``, ``basename``, and ``image_url`` give the file that the label points to,
+whether or not it exists.
+
+``abspath`` is the file's local path. It is present only when the image file is on the
+local file system or is a remote file that is already in the local cache, and it never
+gives a file that does not exist. An astrometry read of a remote label does not retrieve
+the image file, so ``abspath`` is then present only if an earlier read put the file in
+the cache. Reading an image never creates a directory.
 
 Parsed input
 ============
@@ -63,9 +68,9 @@ Parsed input
 A label or image that has already been parsed can be passed in its place: a
 :class:`~pdsparser.Pds3Label` is read as a PDS3 label, and a :class:`~vicar.VicarLabel`
 or :class:`~vicar.VicarImage` as the image file. Parsed content that was not read from a
-file has no path, so the four path subfields are absent. In a read that needs the image
-array, a label or header without a path cannot lead the host to the image file, and it
-raises :exc:`~oops.host.HostFormatError`.
+file has no path, so the four path subfields are absent. A read that needs the image
+array cannot find the image file without a path, so it raises
+:exc:`~oops.host.HostFormatError`, saying that no file path is known.
 
 Options
 =======
@@ -84,17 +89,25 @@ These options are particular to the Voyager host:
 ``astrometry``
     True for an astrometry read, as described above.
 
+``select``
+    Must be None. An image file holds one image, so there is nothing to select, and any
+    other value raises :exc:`~oops.OopsValueError`.
+
 The standard OOPS overrides, ``target``, ``lightsource``, ``path``, ``frame``,
 ``cadence``, ``fov``, ``calibrations``, ``timeshift``, ``navigation``, ``tracker``, and
 ``parallel``, replace what the host would otherwise build. They are listed with
-:meth:`~host_voyager.oops.iss.VoyagerISS.from_file`. Any other keyword is accepted and
-ignored.
+:meth:`~host_voyager.oops.iss.VoyagerISS.from_file`. Any other keyword raises
+:exc:`~oops.OopsTypeError`, so that a misspelled argument is not silently ignored.
 
 Reading a label through oops.Host
 =================================
 
-:meth:`oops.host.Host.from_file` parses a PDS3 label itself, with the parser's fast
-method alone, before it passes the label to the host. A few Voyager labels need the
-strict or loose method, such as ``C2673426_GEOMED.LBL`` in VGISS_7205, whose quoted
-``NOTE`` value starts on the line after its keyword. Call
-:meth:`~host_voyager.oops.iss.VoyagerISS.from_file` for these labels.
+:meth:`oops.host.Host.from_file` recognizes a Voyager ISS image file or PDS3 label and
+passes the file's path, with its other arguments, to
+:meth:`~host_voyager.oops.iss.VoyagerISS.from_file`, so the two give the same Snapshot.
+To recognize a label, it tries the parser's fast, strict, and loose methods in turn, as
+the host does. This matters for a few Voyager labels that only the strict or the loose
+method can read, such as ``C2673426_GEOMED.LBL`` in VGISS_7205, whose quoted ``NOTE``
+value starts on the line after its keyword. A calibrated product keeps its I/F
+calibration unless the ``calibrations`` override replaces it.
+

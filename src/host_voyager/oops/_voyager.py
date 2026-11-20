@@ -95,8 +95,11 @@ class _Voyager:
         later calls to this function are ignored.
 
         Parameters:
-            planets (list, optional): A list of planets to pass to
-                :meth:`~oops.Body.define_solar_system`. None or 0 means all.
+            planets (int | collections.abc.Sequence[int], optional): The number of a
+                planet, from 1 for Mercury to 9 for Pluto, or a sequence of such numbers,
+                such as (6,) for Saturn alone, to pass to
+                :meth:`~oops.Body.define_solar_system`, which defines each planet named
+                and its moons. None or 0 means all.
             asof (str, optional): Only use SPICE kernels that existed before this date;
                 None to ignore.
             irregulars (bool, optional): True to include the irregular satellites; False

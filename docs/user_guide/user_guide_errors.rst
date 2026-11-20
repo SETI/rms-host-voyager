@@ -22,9 +22,10 @@ Reading an image file
 
 :exc:`~oops.host.HostFormatError`
     No label read gives the spacecraft, the camera, or the exposure; neither a time nor a
-    clock count; or, unless ``frame`` is given, the clock stop count. Also raised when
-    the image array is needed and parsed content passed in has no file path from which to
-    find the image file. The message gives the missing items and the file.
+    clock count; or, unless ``frame`` is given, the clock stop count. The message gives
+    the missing items and the file. Also raised when the image array is needed and no
+    file path is known for the parsed content passed in, so that the image file cannot
+    be found.
 
 :exc:`~oops.host.PdsHostError`
     None of the fast, strict, and loose methods of the parser can read the PDS3 label,
@@ -38,8 +39,12 @@ Reading an image file
 :exc:`~oops.host.WrongHostError`
     The file, or the parsed label or image passed in, is not of a Voyager ISS image.
 
+:exc:`~oops.OopsTypeError`
+    A keyword argument is not one that the method accepts.
+
 :exc:`~oops.OopsValueError`
-    ``pds3_options`` holds an option that the parser does not accept.
+    ``select`` is not None, or ``pds3_options`` holds an option that the parser does not
+    accept.
 
 :exc:`OSError`
     A file cannot be read, including the image file that a PDS3 label points to, in a
@@ -51,11 +56,20 @@ Reading a PDS3 index
 :meth:`~host_voyager.oops.iss.VoyagerISS.from_index` raises:
 
 :exc:`~oops.host.HostIndexError`
-    ``supplement`` is None and ``row_dicts`` is not given; an image appears in only one
-    of the index and the supplement; the two tables list the images in different orders
-    and one of them lists an image twice; the index's file name holds no
-    ``_raw_image_index`` from which to find the supplement; or, for ``row_dicts`` without
-    the supplement's columns, the index has no row for one of them.
+    Any of these:
+
+    - The index is one that a volume keeps in its own ``INDEX`` directory, such as
+      ``RAWIMAGES.LBL``, which the host does not read. The message points to the
+      metadata index.
+    - The index's file name holds no ``_raw_image_index`` from which to find the
+      supplement.
+    - ``supplement`` is None and ``row_dicts`` is not given.
+    - A table cannot be read as an index, because its label lacks the table it points
+      to.
+    - An image appears in only one of the index and the supplement, or the two tables
+      list the images in different orders and one of them lists an image twice.
+    - ``row_dicts`` lack the supplement's columns, and the index has no row for one of
+      them.
 
 :exc:`FileNotFoundError`
     The supplemental index does not exist.
@@ -70,13 +84,15 @@ Reading a PDS3 index
     is raised when the iteration reaches that row.
 
 :exc:`~oops.OopsTypeError`
-    A keyword argument is not one that the method accepts.
+    A keyword argument is not one that the method accepts, or a range in ``filter``
+    cannot be compared with the values of its column.
 
 :exc:`~oops.OopsValueError`
-    ``select`` is not None.
+    ``select`` is not None, ``filter`` gives a column that the index does not have, or
+    ``pds3_options`` holds an option that the parser does not accept.
 
 :exc:`~oops.host.PdsHostError`
-    The index's PDS3 label cannot be parsed.
+    The PDS3 label of the index or of the supplement cannot be parsed.
 
 :exc:`~oops.host.WrongHostError`
     The file is not a Voyager ISS index.
@@ -86,3 +102,6 @@ Reading a PDS3 index
 
 The method does not check the pointing. An image whose pointing the SPICE kernels cannot
 supply raises :exc:`oops.OopsSpiceError` only when its Snapshot's frame is evaluated.
+
+An error raised for one row ends the iteration: the iterator gives no rows after it.
+:doc:`user_guide_index` describes how to leave such a row out.

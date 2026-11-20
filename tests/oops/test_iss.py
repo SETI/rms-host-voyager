@@ -19,7 +19,7 @@ import oops
 import pdsparser
 import pytest
 import vicar
-from filecache import FCPath
+from filecache import FCPath, FileCache
 from conftest import (CLOCK_COUNT, GEOMED_LABEL, GEOMED_VICAR, INDEX, INDEX_ROWS,
                       PLATFORM_TO_CAMERA_ANGLE, RAW_LABEL, STOP_TIME, SUPPLEMENT,
                       FakeSpice, FakeSpiceDB, camera_matrix, fake_scencd, rotation)
@@ -148,6 +148,10 @@ _LAB04 = 'ERT 80.303 07:35:06   1/ 1 FULL    RES   VIDICON TEMP  -80.00 DEG C   
 _LAB05 = 'IN/112380/ 9 OUT/xxxxxx/xx     SATURN      DSS #63   BIT SNR    8.297  C'
 _LABEL3 = 'FOR (I/F)*10000., MULTIPLY DN VALUE BY               0.10000'
 
+# The HOST of the VGISS image files, the machine that wrote them, which is not the
+# machine that runs the tests
+_VICAR_HOST = 'AXP-VMS'
+
 
 @pytest.mark.parametrize(('label', 'expected'), [
     ({'LAB02': _LAB02, 'LAB03': _LAB03}, True),
@@ -159,8 +163,14 @@ def test_detect_in_vicar(label: dict[str, str], expected: bool) -> None:
     assert VoyagerISS._detect_in_vicar(label) is expected
 
 
-def test_detect_in_index_defers_to_the_rows() -> None:
-    assert VoyagerISS._detect_in_index({'VOLUME_ID': 'VGISS_6109'}) is None
+@pytest.mark.parametrize(('label', 'expected'), [
+    ({'DATA_SET_ID': 'VG1/VG2-S-ISS-2/3/4/6-PROCESSED-V1.0'}, True),
+    ({'DATA_SET_ID': 'VG2-N-ISS-2/3/4/6-PROCESSED-V1.0'}, True),
+    ({'DATA_SET_ID': 'CO-S-ISSNA/ISSWA-2-EDR-V1.0'}, False),
+    ({'VOLUME_ID': 'VGISS_6109'}, None),
+], ids=['both-spacecraft', 'voyager-2', 'cassini', 'no-data-set'])
+def test_detect_in_index(label: dict[str, str], expected: bool | None) -> None:
+    assert VoyagerISS._detect_in_index(label) is expected
 
 
 @pytest.mark.parametrize(('row', 'expected'), [
@@ -168,7 +178,7 @@ def test_detect_in_index_defers_to_the_rows() -> None:
     ({'SPACECRAFT_NAME': 'VOYAGER 2', 'INSTRUMENT_NAME': 'WIDE ANGLE CAMERA'}, True),
     ({'INSTRUMENT_HOST_NAME': 'VOYAGER 1', 'INSTRUMENT_NAME': 'ULTRAVIOLET'}, False),
     ({'MISSION_NAME': 'GALILEO', 'INSTRUMENT_ID': 'SSI'}, False),
-], ids=['raw-image-index', 'volume-index', 'other-instrument', 'galileo'])
+], ids=['raw-image-index', 'full-index', 'other-instrument', 'galileo'])
 def test_detect_in_row(row: dict[str, str], expected: bool) -> None:
     assert VoyagerISS._detect_in_row(row) is expected
 
@@ -223,7 +233,8 @@ def test_fovs(camera: str, geomed: bool, half_fov: float, pixels: int) -> None:
 
 
 def test_time_ends_at_stop_time() -> None:
-    obs = snapshot()
+    # IMAGE_TIME, a second earlier here, is used only without STOP_TIME
+    obs = snapshot(IMAGE_TIME='1980-10-29T05:57:21')
     assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
     assert obs.texp == pytest.approx(EXPOSURE)
 
@@ -252,6 +263,12 @@ def test_time_from_the_clock_count_without_a_time(changes: dict[str, Any]) -> No
     obs = snapshot(EARTH_RECEIVED_TIME='1980-10-29T07:35:06', **changes)
     assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
     assert obs.time_from_sclk is True
+
+
+def test_time_from_the_clock_count_with_an_unknown_reception_time() -> None:
+    # An index gives EARTH_RECEIVED_TIME "UNKNOWN" for 1,524 rows, which is no time
+    obs = snapshot(STOP_TIME=None, IMAGE_TIME=None, EARTH_RECEIVED_TIME='UNKNOWN')
+    assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
 
 
 def test_time_from_the_clock_count_in_a_given_partition() -> None:
@@ -791,13 +808,17 @@ def test_header_without_voyager_lines() -> None:
     ('UNK', True),
     (' n/a ', True),
     ('NULL', True),
+    ('UNKNOWN', True),
+    ('', True),
+    ('---', True),
     (-99.9999, True),
     (['UNK', 'N/A'], True),
     (['UNK', 1.], False),
     ([], False),
     ('NONE', False),
     (0., False),
-], ids=['none', 'unk', 'lower-case-padded', 'null', 'index-null', 'list-of-nulls',
+], ids=['none', 'unk', 'lower-case-padded', 'null', 'unknown', 'empty', 'dashes',
+        'index-null', 'list-of-nulls',
         'list-with-a-value', 'empty-list', 'none-text', 'zero'])
 def test_is_null(value: Any, null: bool) -> None:
     assert iss._is_null(value) is null
@@ -806,6 +827,11 @@ def test_is_null(value: Any, null: bool) -> None:
 def test_without_nulls_leaves_out_a_placeholder_picture_number() -> None:
     dict_ = {'IMAGE_ID': '0000Z2+000', 'NOTE': '0000Z2+000', 'TARGET_NAME': 'UNK'}
     assert iss._without_nulls(dict_) == {'NOTE': '0000Z2+000'}
+
+
+def test_without_nulls_leaves_out_a_null_inside_an_object() -> None:
+    dict_ = {'IMAGE': {'REFLECTANCE_SCALING_FACTOR': 'UNK', 'LINES': 800}}
+    assert iss._without_nulls(dict_) == {'IMAGE': {'LINES': 800}}
 
 
 def test_merge_takes_an_item_from_the_source_that_gives_it() -> None:
@@ -837,10 +863,12 @@ def test_merge_takes_an_item_from_the_source_that_gives_it() -> None:
     ('TARGET_NAME', 'S RINGS', 'SATURN', 'S RINGS'),                            # C4364518
     ('MISSION_PHASE_NAME', 'SATURN ENCOUNTER', 'JUPITER ENCOUNTER',
      'SATURN ENCOUNTER'),
+    ('EARTH_RECEIVED_TIME', '1979-07-10T03:00:37',                              # C2066403
+     '1979-07-10T03:01:00', '1979-07-10T03:00:37'),
 ], ids=['spacecraft', 'camera', 'product', 'image-number', 'clock-count', 'picno',
         'image-time', 'stop-time', 'exposure-truncated', 'exposure-truncated-to-zero',
         'exposure-different', 'exposure-long', 'filter-name', 'filter-number',
-        'target-different', 'phase'])
+        'target-different', 'phase', 'earth-received-time'])
 def test_merge_resolution_rule(item: str, label_value: Any, header_value: Any,
                                chosen: Any) -> None:
     merged = VoyagerISS._merge_items({item: label_value}, {item: header_value})
@@ -924,10 +952,10 @@ def test_from_file_label_reads_the_label_and_the_image(tmp_path: pathlib.Path) -
 def test_from_file_label_merges_both_sources(tmp_path: pathlib.Path) -> None:
     (label, _image) = _write_label_and_image(tmp_path, label3=_LABEL3)
     obs = VoyagerISS.from_file(label)
-    # Every key of either source, with the label's value for an item both give, and no
-    # header line converted to items
-    assert set(obs.dict) == ((set(obs.label_dict) | set(obs.header_dict) | {'IMAGE_ID'})
-                             - {'LAB02', 'LAB03', 'LAB05'})
+    # Every key of either source that has a value, with the label's value for an item
+    # both give, and no header line converted to items; the header's BLTYPE is empty
+    keys = set(obs.label_dict) | set(obs.header_dict) | {'IMAGE_ID'}
+    assert set(obs.dict) == keys - {'LAB02', 'LAB03', 'LAB05', 'BLTYPE'}
     assert obs.dict['LABEL3'] == _LABEL3
     assert obs.dict['STOP_TIME'] == obs.label_dict['STOP_TIME']
     assert obs.dict['IMAGE_ID'] == '0469S1-015'
@@ -999,6 +1027,18 @@ def test_from_file_metadata_is_json(tmp_path: pathlib.Path, input_: str,
     obs = _read_input(tmp_path, input_)
     value = getattr(obs, name)
     assert json.loads(json.dumps(value)) == value
+
+
+@pytest.mark.parametrize(('input_', 'name'), [(input_, name)
+                                              for input_ in ('label', 'image')
+                                              for name in ('dict', 'header_dict')])
+def test_from_file_full_read_keeps_the_header_as_written(tmp_path: pathlib.Path,
+                                                         input_: str, name: str) -> None:
+    """Reading the image array does not replace the header's HOST, the machine that
+    wrote the file, with the reading machine."""
+
+    obs = _read_input(tmp_path, input_)
+    assert getattr(obs, name)['HOST'] == _VICAR_HOST
 
 
 @pytest.mark.parametrize('input_', INPUTS)
@@ -1202,7 +1242,7 @@ def test_from_file_parsed_label_without_a_path(tmp_path: pathlib.Path) -> None:
     obs = VoyagerISS.from_file(label, astrometry=True)
     assert [name for name in ('filepath', 'basename', 'abspath', 'image_url')
             if hasattr(obs, name)] == []
-    with pytest.raises(oops.host.HostFormatError, match='without a file path'):
+    with pytest.raises(oops.host.HostFormatError, match='no file path is known'):
         VoyagerISS.from_file(label)
 
 
@@ -1219,25 +1259,62 @@ def test_from_file_parsed_image_without_a_path() -> None:
 def test_from_file_parsed_vicar_label_without_a_path_cannot_read_data() -> None:
     label = vicar.VicarLabel.from_file(GEOMED_VICAR)
     label.filepath = None
-    with pytest.raises(oops.host.HostFormatError, match='without a file path'):
+    with pytest.raises(oops.host.HostFormatError, match='no file path is known'):
         VoyagerISS.from_file(label)
 
 
-def test_from_file_remote_label_for_astrometry_has_no_abspath() -> None:
+_REMOTE_VOLUME = 'https://pds-rings.seti.org/holdings/volumes/VGISS_6xxx/VGISS_6109/'
+
+
+def _remote_label(file_cache: FileCache) -> pdsparser.Pds3Label:
+    """The GEOMED test label as if read from the holdings, with `file_cache` as the
+    cache of its URL."""
+
+    label = pdsparser.Pds3Label(GEOMED_LABEL.read_text())
+    label.filepath = FCPath(_REMOTE_VOLUME + GEOMED_LABEL.name, filecache=file_cache)
+    return label
+
+
+def _put_in_cache(file_cache: FileCache, url: str) -> pathlib.Path:
+    """Write a file into `file_cache` as if `url` had been retrieved; its local path."""
+
+    local = file_cache.get_local_path(url)
+    assert isinstance(local, pathlib.Path)
+    local.write_bytes(b'')
+    return local
+
+
+def test_from_file_remote_label_for_astrometry_has_no_abspath(
+        file_cache: FileCache) -> None:
     """A remote label read alone does not retrieve its image file, so no local path
     names it."""
 
-    label = pdsparser.Pds3Label(GEOMED_LABEL.read_text())
-    label.filepath = FCPath('https://pds-rings.seti.org/holdings/volumes/X.LBL')
-    obs = VoyagerISS.from_file(label, astrometry=True)
+    obs = VoyagerISS.from_file(_remote_label(file_cache), astrometry=True)
     assert not hasattr(obs, 'abspath')
-    assert obs.image_url == ('https://pds-rings.seti.org/holdings/volumes/'
-                             'C3450201_GEOMED_edited.IMG')
+    assert obs.image_url == _REMOTE_VOLUME + GEOMED_VICAR.name
+
+
+def test_from_file_remote_label_for_astrometry_has_an_abspath_when_cached(
+        file_cache: FileCache) -> None:
+    local = _put_in_cache(file_cache, _REMOTE_VOLUME + GEOMED_VICAR.name)
+    obs = VoyagerISS.from_file(_remote_label(file_cache), astrometry=True)
+    assert obs.abspath == local.resolve()
 
 
 def test_from_file_local_label_for_astrometry_has_an_abspath() -> None:
     obs = VoyagerISS.from_file(GEOMED_LABEL, astrometry=True)
     assert obs.abspath == GEOMED_VICAR.resolve()
+
+
+def test_from_file_local_label_for_astrometry_without_its_image_file(
+        tmp_path: pathlib.Path) -> None:
+    """No abspath names a file that does not exist."""
+
+    label = tmp_path / GEOMED_LABEL.name
+    shutil.copy(GEOMED_LABEL, label)
+    obs = VoyagerISS.from_file(label, astrometry=True)
+    assert not hasattr(obs, 'abspath')
+    assert obs.filepath == FCPath(tmp_path / GEOMED_VICAR.name)
 
 
 def test_from_file_label_needs_the_image_file_for_data(tmp_path: pathlib.Path) -> None:
@@ -1576,11 +1653,12 @@ def _write_vicar(directory: pathlib.Path, *, name: str = 'C3450201.IMG',
                  lab03: str = _LAB03, lab04: str = _LAB04,
                  lab05: str = _LAB05) -> pathlib.Path:
     """Write a small Voyager VICAR image with no PDS3 label; return its path. The header
-    holds LABEL3 if `label3` is given, and the given LAB02, LAB03, LAB04 and LAB05."""
+    holds LABEL3 if `label3` is given, the given LAB02, LAB03, LAB04 and LAB05, and the
+    HOST of the archive's files, `_VICAR_HOST`."""
 
     vic = vicar.VicarImage.from_array(np.arange(64, dtype='uint8').reshape(8, 8))
     for (key, value) in {'LAB02': lab02, 'LAB03': lab03, 'LAB04': lab04,
-                         'LAB05': lab05}.items():
+                         'LAB05': lab05, 'HOST': _VICAR_HOST}.items():
         vic[key] = value
     if label3 is not None:
         vic['LABEL3'] = label3
@@ -1649,6 +1727,20 @@ def test_from_file_rejects_other_hosts(tmp_path: pathlib.Path) -> None:
     with pytest.raises(oops.host.WrongHostError):
         VoyagerISS.from_file(label, astrometry=True)
 
+
+def test_from_file_rejects_an_unknown_keyword() -> None:
+    with pytest.raises(oops.OopsTypeError,
+                       match=r"unexpected keyword argument for VoyagerISS\.from_file: "
+                             r"'astrometric'"):
+        VoyagerISS.from_file(RAW_LABEL, astrometric=True)
+
+
+@pytest.mark.parametrize('select', [0, slice(None), 'data'])
+def test_from_file_refuses_select(select: Any) -> None:
+    with pytest.raises(oops.OopsValueError,
+                       match='a Voyager ISS image file is one observation'):
+        VoyagerISS.from_file(RAW_LABEL, astrometry=True, select=select)
+
 ##########################################################################################
 # from_index()
 ##########################################################################################
@@ -1686,48 +1778,90 @@ def test_from_index_merges_the_supplement() -> None:
     assert obs.dict['SPACECRAFT_CLOCK_PARTITION_NUMBER'] == 2
 
 
-def test_from_index_names_the_image_file_beside_the_index() -> None:
-    """An index outside the holdings layout has its volume directory beside it."""
+def _copy_index(directory: pathlib.Path) -> pathlib.Path:
+    """Copies of the test index and supplement in `directory`; the path of the index."""
 
-    obs = list(VoyagerISS.from_index(INDEX))[9]
-    image = INDEX.parent / 'VGISS_6109/DATA/C34502XX/C3450201_RAW.IMG'
-    assert obs.filepath == FCPath(image)
-    assert obs.basename == 'C3450201_RAW.IMG'
-    assert obs.abspath == image.resolve()
-    assert obs.image_url == FCPath(image).absolute().as_posix()
-
-
-def _holdings_index(holdings: pathlib.Path) -> pathlib.Path:
-    """Copies of the test index and supplement where the holdings keep them; the path
-    of the index."""
-
-    directory = holdings / 'metadata/VGISS_6xxx/VGISS_6109'
-    directory.mkdir(parents=True)
+    directory.mkdir(parents=True, exist_ok=True)
     for path in (INDEX, SUPPLEMENT):
         shutil.copy(path, directory)
         shutil.copy(path.with_suffix('.tab'), directory)
     return directory / INDEX.name
 
 
-def test_from_index_names_the_image_file_in_the_volumes_tree(
-        tmp_path: pathlib.Path) -> None:
-    obs = list(VoyagerISS.from_index(_holdings_index(tmp_path)))[9]
-    image = tmp_path / 'volumes/VGISS_6xxx/VGISS_6109/DATA/C34502XX/C3450201_RAW.IMG'
+def _holdings_index(holdings: pathlib.Path) -> pathlib.Path:
+    """Copies of the test index and supplement where the holdings keep them; the path
+    of the index."""
+
+    return _copy_index(holdings / 'metadata/VGISS_6xxx/VGISS_6109')
+
+
+# The image file of row 9 of the test index, C3450201, within its volume
+_ROW9_IMAGE = 'DATA/C34502XX/C3450201_RAW.IMG'
+
+
+def test_from_index_names_the_image_file_beside_the_index(tmp_path: pathlib.Path) -> None:
+    """An index outside the holdings layout has its volume directory beside it."""
+
+    image = tmp_path / 'VGISS_6109' / _ROW9_IMAGE
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b'')
+    obs = list(VoyagerISS.from_index(_copy_index(tmp_path)))[9]
     assert obs.filepath == FCPath(image)
     assert obs.basename == 'C3450201_RAW.IMG'
     assert obs.abspath == image.resolve()
+    assert obs.image_url == FCPath(image).absolute().as_posix()
 
 
-def test_from_index_remote_image_file_has_a_url_and_no_abspath() -> None:
-    index = FCPath('https://pds-rings.seti.org/holdings/metadata/VGISS_6xxx/VGISS_6109/'
-                   'VGISS_6109_raw_image_index.lbl')
+def test_from_index_names_the_image_file_in_the_volumes_tree(
+        tmp_path: pathlib.Path) -> None:
+    obs = list(VoyagerISS.from_index(_holdings_index(tmp_path)))[9]
+    image = tmp_path / 'volumes/VGISS_6xxx/VGISS_6109' / _ROW9_IMAGE
+    assert obs.filepath == FCPath(image)
+    assert obs.basename == 'C3450201_RAW.IMG'
+
+
+@pytest.mark.parametrize('layout', ['beside', 'holdings'])
+def test_from_index_without_the_volume_creates_nothing(tmp_path: pathlib.Path,
+                                                       layout: str) -> None:
+    """With no volume where the index places it, no Snapshot has an abspath and no
+    directory is created."""
+
+    index = (_copy_index(tmp_path) if layout == 'beside'
+             else _holdings_index(tmp_path))
+    before = sorted(tmp_path.rglob('*'))
+    snapshots = list(VoyagerISS.from_index(index))
+    assert sorted(tmp_path.rglob('*')) == before
+    assert [obs for obs in snapshots if hasattr(obs, 'abspath')] == []
+
+
+def _remote_index(file_cache: FileCache) -> FCPath:
+    """The URL of the test index in the holdings, with `file_cache` as its cache."""
+
+    return FCPath('https://pds-rings.seti.org/holdings/metadata/VGISS_6xxx/VGISS_6109/'
+                  'VGISS_6109_raw_image_index.lbl', filecache=file_cache)
+
+
+# The URL of the image file of row 9 of the test index in the holdings
+_ROW9_URL = 'https://pds-rings.seti.org/holdings/volumes/VGISS_6xxx/VGISS_6109/' + _ROW9_IMAGE
+
+
+def test_from_index_remote_image_file_has_a_url_and_no_abspath(
+        file_cache: FileCache) -> None:
     rows = VoyagerISS._read_index_rows(INDEX, supplement=SUPPLEMENT)
-    obs = list(VoyagerISS.from_index(index, row_dicts=rows, supplement=SUPPLEMENT))[9]
-    url = ('https://pds-rings.seti.org/holdings/volumes/VGISS_6xxx/VGISS_6109/DATA/'
-           'C34502XX/C3450201_RAW.IMG')
-    assert obs.image_url == url
-    assert str(obs.filepath) == url
+    obs = list(VoyagerISS.from_index(_remote_index(file_cache), row_dicts=rows,
+                                     supplement=SUPPLEMENT))[9]
+    assert obs.image_url == _ROW9_URL
+    assert str(obs.filepath) == _ROW9_URL
     assert not hasattr(obs, 'abspath')
+
+
+def test_from_index_remote_image_file_has_an_abspath_when_cached(
+        file_cache: FileCache) -> None:
+    local = _put_in_cache(file_cache, _ROW9_URL)
+    rows = VoyagerISS._read_index_rows(INDEX, supplement=SUPPLEMENT)
+    obs = list(VoyagerISS.from_index(_remote_index(file_cache), row_dicts=rows,
+                                     supplement=SUPPLEMENT))[9]
+    assert obs.abspath == local.resolve()
 
 
 def test_from_index_consumer_subfields() -> None:
@@ -1769,13 +1903,32 @@ def test_from_index_requires_a_raw_image_index(tmp_path: pathlib.Path) -> None:
         VoyagerISS.from_index(copy)
 
 
-def test_from_index_rejects_the_rows_of_a_volume_index(tmp_path: pathlib.Path) -> None:
+def test_from_index_rejects_the_rows_of_the_full_index(tmp_path: pathlib.Path) -> None:
     copy = tmp_path / 'VGISS_6109_index.lbl'
     shutil.copy(INDEX, copy)
     shutil.copy(INDEX.with_suffix('.tab'), tmp_path)
     rows = VoyagerISS._read_index_rows(INDEX, supplement=SUPPLEMENT)
     with pytest.raises(oops.host.HostIndexError, match='needs a raw image index'):
         VoyagerISS.from_index(copy, row_dicts=rows)
+
+
+def _volume_index(directory: pathlib.Path) -> pathlib.Path:
+    """A copy of the test index where a volume keeps its own index; its path."""
+
+    index = directory / 'VGISS_6109/INDEX/RAWIMAGES.LBL'
+    index.parent.mkdir(parents=True)
+    shutil.copy(INDEX, index)
+    shutil.copy(INDEX.with_suffix('.tab'), index.parent)
+    return index
+
+
+@pytest.mark.parametrize('host', [VoyagerISS, oops.Host], ids=['iss', 'oops-host'])
+def test_from_index_refuses_a_volumes_own_index(tmp_path: pathlib.Path,
+                                                host: Any) -> None:
+    with pytest.raises(oops.host.HostIndexError,
+                       match=r"Voyager ISS reads the Ring-Moon Systems Node metadata "
+                             r"index, .* not a volume's own index: .*RAWIMAGES\.LBL$"):
+        host.from_index(_volume_index(tmp_path), supplement=SUPPLEMENT)
 
 
 def test_from_index_merges_the_supplement_into_given_rows() -> None:
@@ -1976,6 +2129,13 @@ def test_from_index_filter() -> None:
                                      filter={'INSTRUMENT_NAME': 'WIDE ANGLE CAMERA'}))
     assert {o.detector for o in obs} == {'WAC'}
     assert 0 < len(obs) < INDEX_ROWS
+
+
+def test_from_index_filter_with_an_unknown_column() -> None:
+    """The call itself raises, before any iteration, and names the column."""
+
+    with pytest.raises(oops.OopsValueError, match='CAMERA_NAME'):
+        VoyagerISS.from_index(INDEX, filter={'CAMERA_NAME': 'WIDE ANGLE CAMERA'})
 
 
 def test_from_index_fov_override() -> None:

@@ -92,9 +92,9 @@ apply here to the stubs described below.
 - So the time is `STOP_TIME`, else `IMAGE_TIME`. Only when no source read gives either
   does `_tstop()` take it from the clock count through the clock kernel (`sct2e`), and
   the `time_from_sclk` subfield is then True (operator, 2026-11-19). The count's time
-  follows `STOP_TIME` by a median of 0.9 s (79% within 3 s) on the 76,635 raw images
-  that give both, and by whole FDS minutes for most of the rest, so such a time can be
-  minutes late. The default frame is an unregistered `Cmatrix` relative to J2000, from
+  is a median of 0.9 s after `STOP_TIME` (79% within 3 s) on the 76,635 raw images
+  that give both, whole FDS minutes later for most of the rest, and more than a second
+  earlier for 12 (up to 7,625 s, C4201035), so such a time can be off by minutes. The default frame is an unregistered `Cmatrix` relative to J2000, from
   the record found by the clock count (`_camera_frame()`, tolerance 20 ticks). Labels and
   VICAR headers give no clock partition (the supplement does);
   `_Voyager.sclk_ticks()` picks the partition nearest `STOP_TIME`, or, without a time,
@@ -114,21 +114,26 @@ apply here to the stubs described below.
   <midtime> for <image file>: SPICE(CKINSUFFDATA)", the midtime after any cadence or
   timeshift override, the SPICE exception as its cause. `_camera_frame()` catches exactly
   `(LookupError, OSError, RuntimeError, ValueError)`, what cspyce raises under either
-  error action, around `sclk_ticks()`, `ckgp` and `pxform`, and then returns a
-  `_NoPointingFrame`, which raises that error whenever it is evaluated. `from_file()`
-  evaluates the frame at the midtime, so it raises at load time; `from_index()` does not,
-  so it keeps the row. Neither checks anything when a `frame` override is given. An image
+  error action, around `sclk_ticks()`, `ckgp` and `pxform`, and then returns an
+  `oops.frame.SpiceErrorFrame` (rms-oops's shared form, used by all four hosts), which
+  raises that error whenever it is evaluated. `from_file()` evaluates the frame at the
+  midtime, so it raises at load time; `from_index()` does not, so it keeps the row. Neither checks anything when a `frame` override is given. An image
   for which no source read gives the exposure, camera, spacecraft, a time or a clock
   count, or (without a `frame` override) a clock count raises
   `oops.host.HostFormatError`, naming the items and the file, from both methods; a
   missing `MISSION_PHASE_NAME` is computed from the time. Across the VGISS labels 2,137
   images have no record, 1,090 of them in VGISS_8210. The index and the label of
   C3940530 (VGISS_6201) give no exposure (only its VICAR header does, 5 ms), so
-  iterating `from_index()` over that volume raises at that row; that is left for the
-  operator.
-- `from_index()` accepts only a `VGISS_xxxx_raw_image_index.lbl`, one row per RAW image,
-  never the full `VGISS_xxxx_index.lbl` (one row per label: RAW, CLEANED, CALIB, GEOMED
-  and the reseau and tiepoint tables), because OPUS archives only the raw images. The
+  iterating `from_index()` over that volume raises at that row and ends there (a
+  `filter` can leave the row out); that is left for the operator (#29), and whether the
+  iteration should go on past a row error is rms-oops#249.
+- `from_index()` accepts only a `VGISS_xxxx_raw_image_index.lbl` of the Ring-Moon
+  Systems Node metadata, one row per RAW image, never the full `VGISS_xxxx_index.lbl`
+  (one row per label: RAW, CLEANED, CALIB, GEOMED and the reseau and tiepoint tables),
+  because OPUS archives only the raw images. A volume's own index, any label in a
+  directory named `INDEX` (such as `VGISS_6109/INDEX/RAWIMAGES.LBL`, whose `^INDEX_TABLE`
+  points to an object named `TABLE`), raises `HostIndexError` at call time, before
+  anything is read, with a message pointing to the metadata index. The
   preexisting `VGISS_xxxx_supplemental_index.lbl` matches the raw image index row for
   row, so the two join through `oops.Host._read_index_rows()`. The default
   `oops.Host.SUPPLEMENT` search would look for `..._raw_image_supplemental_index`, so for
@@ -141,31 +146,37 @@ apply here to the stubs described below.
   `EXPOSURE_DURATION` `BYTES = 7` where the field and its `FORMAT` "F9.4" are 9 wide, so
   `_index_label()` widens any column to its FORMAT width before the table is read
   (1,597 of 76,652 rows lose digits otherwise, and the null -99.9999 reads -99.99).
-  `oops.Host.from_index()` identifies the host from the first row and passes the call to
-  `VoyagerISS.from_index()`, which reads the rows; `oops.Host._read_index_rows()` pairs
+  `oops.Host.from_index()` identifies the host from the index label's `DATA_SET_ID`
+  (`_detect_in_index()`; every VGISS index label, metadata or volume, gives one such as
+  "VG1/VG2-S-ISS-2/3/4/6-PROCESSED-V1.0") and passes the call, every argument included,
+  to `VoyagerISS.from_index()`, which reads the rows; `oops.Host._read_index_rows()` pairs
   them by position when the two tables list the same files in the same order (every
   VGISS volume does) and otherwise by `VOLUME_NAME` and `FILE_SPECIFICATION_NAME`, its
   default file key. Rows given without `STOP_TIME` (read without the supplement and the
   repair) are replaced by the host's own reading of the same
   rows, matched by `VOLUME_NAME` and `FILE_SPECIFICATION_NAME`; naming the supplement
   rejects the rows of a full index. The table reader's `_mask` entries are dropped; the
-  only declared null constants (exposure -99.9999, supplement `UNK` times) and the
-  placeholder `IMAGE_ID` `0000Z1+000`/`0000Z2+000` (34 rows) never stand for real
-  values. The supplement adds `START_TIME` and `STOP_TIME` with fractional
+  only declared null constants (exposure -99.9999, supplement `UNK` times), the
+  `UNKNOWN` that the indexes give for `EARTH_RECEIVED_TIME` (1,524 rows) and `IMAGE_ID`
+  (250), the empty `NOTE` (36,095), and the placeholder `IMAGE_ID`
+  `0000Z1+000`/`0000Z2+000` (34 rows) never stand for real values. The supplement adds `START_TIME` and `STOP_TIME` with fractional
   seconds; the index's `IMAGE_TIME` has whole seconds. Each Snapshot's `filepath`,
   `basename` and `image_url` name the raw image file (`PRODUCT_ID`), never the label in
   `FILE_SPECIFICATION_NAME`, as a full path or URL: `_index_image_path()` maps an index
   in `<holdings>/metadata/VGISS_6xxx/VGISS_6109/` to the volume
   `<holdings>/volumes/VGISS_6xxx/VGISS_6109/`, and an index anywhere else to the
-  directory `VOLUME_NAME` beside it. `abspath` is present only for a local image file or
-  a remote one already in the cache.
+  directory `VOLUME_NAME` beside it (the index's directory holds the volumes, the rule
+  all four hosts share). `oops.Host._apply_overrides()` names the file: `abspath` only
+  for an image file that exists locally or a remote one already in the cache, and it
+  never creates a directory (it uses `get_local_path(create_parents=False)`).
 - `from_index()` returns an iterator. It checks its arguments and reads and filters the
   tables itself, then returns a generator that builds each row's Snapshot when the
   iteration reaches it, so only an error in one row waits for that row. It must not be a
   generator function, which would defer every error to the first `next()`.
 - VGISS indexes name the volume in `VOLUME_NAME`, not `VOLUME_ID`, and the camera in
-  `INSTRUMENT_NAME` ("NARROW ANGLE CAMERA" or "WIDE ANGLE CAMERA"). The index label itself
-  identifies no host or instrument, so detection relies on `_detect_in_row()`.
+  `INSTRUMENT_NAME` ("NARROW ANGLE CAMERA" or "WIDE ANGLE CAMERA"). The index label
+  names the host and instrument only in `DATA_SET_ID`, which `_detect_in_index()`
+  reads; without one it returns None, and `_detect_in_row()` decides.
 - `test_files/` holds cut-down copies of real VGISS_6109 products from
   <https://pds-rings.seti.org/holdings/>: the first 30 rows of the raw image and
   supplemental indexes, which include C3450201 and both cameras; the C3450201 RAW and
@@ -185,9 +196,11 @@ apply here to the stubs described below.
   the source that `_RESOLUTION` names for that item, "label" or "header", the same for
   every image; never a per-image test. Every item is "label" now. The comment above
   `_RESOLUTION` gives the evidence for each choice, and #14 lists the images on which
-  the winner is wrong; keep them in step. A null (`UNK`, `N/A`, `NULL` in any case,
-  None, a list of nulls, -99.9999 in the index, and the `IMAGE_ID` placeholder
-  `0000Zn+000`) counts as missing. A subfield no source gives is absent, never None
+  the winner is wrong; keep them in step. A null (`UNK`, `UNKNOWN`, `N/A`, `NULL`,
+  `---` and empty text in any case, None, a list of nulls, -99.9999 in the index, and
+  the `IMAGE_ID` placeholder `0000Zn+000`) counts as missing, also inside a label
+  OBJECT (`dict['IMAGE']['REFLECTANCE_SCALING_FACTOR']` 'UNK' on some products);
+  `label_dict` and `header_dict` keep them. A subfield no source gives is absent, never None
   (`if_scale` included). `calibrations` is `[FlatCalib('I/F', if_scale)]` when
   `if_scale` is present, else empty (it matches the label's REFLECTANCE_SCALING_FACTOR,
   which the rms-oops host read, except for the 3.345 factor on Voyager 1 Saturn).
@@ -199,14 +212,23 @@ apply here to the stubs described below.
   `oops.Host.from_file()` parsed; times as the parser's ISO strings, sets as lists, no
   END) and
   `header_dict` the header (`as_dict(unique=True)`, a repeated parameter keyed
-  `TASK[0]`, `TASK[1]`, ...), each only when read; all three are JSON. `spacecraft`, the
+  `TASK[0]`, `TASK[1]`, ...), each only when read; all three are JSON. A `VicarImage`
+  rewrites `HOST` (and `BHOST`) with the reading machine when it reads the array, so a
+  full read takes the header from the file's `VicarLabel` (`_header_as_written()`), and
+  `header_dict` matches an astrometry read. `from_file()` raises `OopsTypeError` for an
+  unknown keyword and `OopsValueError` for a `select` other than None, as
+  `from_index()` does; `oops.Host.from_file()` passes the path and the caller's
+  arguments unchanged, so both entry points give the same Snapshot. `spacecraft`, the
   int 1 or 2, is how a consumer tells Voyager 1 from Voyager 2. Consumers read the
   documented subfields, including `spacecraft_clock_start_count` and
   `spacecraft_clock_stop_count`, rather than parsing `dict`.
 - `filepath`, `basename`, `abspath` and `image_url` name the image file on every input.
   They are absent for parsed content with no file path (a `Pds3Label` made from text, a
-  `VicarImage` made from an array), and `abspath` is absent for a remote image file that a
-  label read with `astrometry=True` did not retrieve.
+  `VicarImage` made from an array), and a full read of such content raises
+  `HostFormatError` ("no file path is known"). `abspath` is present only when the image
+  file exists locally or is already in the cache, the same rule in `from_file()` and
+  `from_index()`. Tests of cache state use the `file_cache` fixture, a private
+  `FileCache`, never the shared one.
 - The data are read where the VICAR header places them, not where the label does: the
   label of C2673426_GEOMED in VGISS_7205 points a record early, into its two-record
   header, and that of C3489611_GEOMED in VGISS_6112 a record late. The header supplies
@@ -220,9 +242,8 @@ apply here to the stubs described below.
   `C2673426_GEOMED.LBL` of VGISS_7205, whose quoted `NOTE` value starts on the line after
   the keyword; `from_file()` then parses the label again with "strict", then "loose",
   also after a `ValueError` (an hour of 24), and raises `PdsHostError` naming the label
-  if all fail. The generic `oops.Host.from_file()` parses the label itself before it
-  reaches the host, so it still fails on those labels; that fix belongs in rms-oops or
-  pdsparser.
+  if all fail. `oops.Host.from_file()` identifies the host with the same fallback and
+  then passes the path itself, so it reads those labels too.
 - The labels of the RESLOC and GEOMA tables have no `^IMAGE` and raise `PdsHostError`;
   their VICAR files (`TYPE='TABULAR'`) raise `VicarHostError`, as does an image file cut
   short. Parsed content of another host raises `WrongHostError` (#17).

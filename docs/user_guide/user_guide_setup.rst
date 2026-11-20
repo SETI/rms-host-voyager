@@ -68,7 +68,8 @@ The first call to :meth:`~host_voyager.oops.iss.VoyagerISS.from_file` or
 cameras' fields of view. To choose the bodies that OOPS defines, or to use only the
 kernels that existed before a given date, call
 :meth:`~host_voyager.oops.iss.VoyagerISS.initialize` before opening the first image.
-This call defines Saturn, planet 6, and its moons, and no other planet:
+Its ``planets`` argument is one planet number, from 1 for Mercury to 9 for Pluto, or a
+sequence of them. This call defines Saturn, planet 6, and its moons, and no other planet:
 
 .. code-block:: python
 

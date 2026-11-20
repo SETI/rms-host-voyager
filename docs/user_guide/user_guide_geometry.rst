@@ -28,9 +28,11 @@ For these the host takes the time of the image's spacecraft clock stop count and
 - The SPICE clock kernel converts the count in that partition to a time at the
   spacecraft.
 
-For most images, the count's time follows ``STOP_TIME`` by about a second, but for some
-it follows by whole FDS minutes of 48 s, so a time taken from the count can be minutes
-late. :doc:`user_guide_appendix_pointing` gives the evidence.
+For most images, the count's time comes about a second after ``STOP_TIME``. Of the
+76,635 raw images whose labels give both, 79% differ by 3 s or less. Most of the rest
+are later by whole FDS minutes of 48 s, and 12 are earlier, by up to about two hours for
+``C4201035``. A time taken from the count can therefore be off by minutes or more.
+:doc:`user_guide_appendix_pointing` gives the evidence.
 
 An image cannot be read if it has neither a time nor a clock count (see
 :doc:`user_guide_errors`).

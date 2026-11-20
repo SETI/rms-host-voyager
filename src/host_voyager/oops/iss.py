@@ -17,7 +17,7 @@ import numpy as np
 
 from filecache import FCPath
 from pdsparser import Pds3Label, PdsError
-from vicar     import VicarError, VicarImage
+from vicar     import VicarError, VicarImage, VicarLabel
 
 import oops
 from ._voyager import _Voyager
@@ -69,9 +69,16 @@ _PDS3_METHODS = ('fast', 'strict', 'loose')
 _INDEX_KEYS = ['VOLUME_NAME', 'FILE_SPECIFICATION_NAME']
 
 # The holdings of the PDS Ring-Moon Systems Node keep the indexes of a volume in
-# metadata/<series>/<volume>/ and the volume itself in volumes/<series>/<volume>/
+# metadata/<series>/<volume>/ and the volume itself in volumes/<series>/<volume>/. A
+# volume also keeps indexes of its own in its INDEX directory, such as RAWIMAGES.LBL,
+# which have no supplement and are not read.
 _METADATA_DIR = 'metadata'
 _VOLUMES_DIR = 'volumes'
+_VOLUME_INDEX_DIR = 'INDEX'
+
+# The DATA_SET_ID of every VGISS index label, such as
+# "VG1/VG2-S-ISS-2/3/4/6-PROCESSED-V1.0" or "VG2-N-ISS-2/3/4/6-PROCESSED-V1.0"
+_ISS_DATA_SET = re.compile(r'VG[12/VG]*-[JSUN]-ISS-')
 
 # Target name as found in a PDS label or index -> the oops body name
 _TARGET_NAME_REPAIRS = {
@@ -159,10 +166,12 @@ _IF_LINE = re.compile(r'FOR \(I/F\)\*10000\., MULTIPLY DN VALUE BY\s+'
                       r'(?P<scale>[-+]?(\d+\.?\d*|\.\d+)([Ee][-+]?\d+)?)\s*$')
 _IF_LINE_UNITS = 10000.
 
-# The PDS3 null constants that a label or index gives for an unknown value, and the
-# NULL_CONSTANT of the numeric columns of a VGISS raw image index. Either counts as
-# missing.
-_NULL_STRINGS = {'UNK', 'N/A', 'NULL'}
+# The texts that a label or index gives for an unknown value, and the NULL_CONSTANT of the
+# numeric columns of a VGISS raw image index. Either counts as missing. Besides the PDS3
+# null constants, the raw image indexes give EARTH_RECEIVED_TIME "UNKNOWN" (1,524 rows)
+# and IMAGE_ID "UNKNOWN" (250 rows) where the labels give "UNK", and NOTE "" (36,095
+# rows); "---" is the archive's other placeholder text.
+_NULL_STRINGS = {'UNK', 'UNKNOWN', 'N/A', 'NULL', '', '---'}
 _NULL_NUMBER = -99.9999
 
 # Placeholders that stand for an unknown value of one item and are never a real value of
@@ -214,10 +223,10 @@ def _is_null(value):
         value (Any): The value.
 
     Returns:
-        bool: True for None; for a PDS3 null constant ("UNK", "N/A" or "NULL", in any
-        case and with any surrounding blanks); for the -99.9999 of an index; and for a
-        non-empty list whose every element is one of these. No VGISS label gives a list
-        with only some elements null.
+        bool: True for None; for a placeholder text ("UNK", "UNKNOWN", "N/A", "NULL",
+        "---" or an empty string, in any case and with any surrounding blanks); for the
+        -99.9999 of an index; and for a non-empty list whose every element is one of
+        these. No VGISS label gives a list with only some elements null.
     """
 
     if value is None:
@@ -231,9 +240,12 @@ def _is_null(value):
 
 def _without_nulls(dict_):
     """A copy of a dictionary without the keys whose values mean unknown: a null, as
-    :func:`_is_null` defines it, or a placeholder of `_PLACEHOLDERS` for that key."""
+    :func:`_is_null` defines it, or a placeholder of `_PLACEHOLDERS` for that key. A
+    value that is itself a dictionary, such as the IMAGE object of a label, is copied
+    the same way."""
 
-    return {key: value for (key, value) in dict_.items()
+    return {key: _without_nulls(value) if isinstance(value, dict) else value
+            for (key, value) in dict_.items()
             if not (_is_null(value) or (key in _PLACEHOLDERS and isinstance(value, str)
                                         and _PLACEHOLDERS[key].fullmatch(value.strip())))}
 
@@ -421,49 +433,6 @@ _RESOLUTION = {
 }
 
 
-class _NoPointingFrame(oops.Frame):
-    """The camera frame of an image whose pointing the SPICE kernels cannot supply.
-
-    Evaluating it raises :class:`oops.OopsSpiceError`, built from the exception that
-    SPICE raised. :meth:`VoyagerISS.from_index` gives it to such an image, so that the
-    row is kept and the error is raised only when the pointing is used.
-
-    Parameters:
-        cause (Exception): The exception that SPICE raised.
-        description (str): What could not be obtained, such as "no Voyager 1 ISS NAC
-            pointing".
-        filepath (FCPath | str | None): The image file, or None if it is not known.
-    """
-
-    def __init__(self, cause, *, description, filepath):
-
-        self._cause = cause
-        self._description = description
-        self._filepath = filepath
-        self._reference = oops.Frame.J2000
-        self._origin = None
-        self._shape = ()
-        self._register()
-
-    def transform_at_time(self, time, *, quick=None):
-        """Raise the error of the missing pointing.
-
-        Parameters:
-            time (ScalarLike): The time in seconds TDB.
-            quick (dict | bool, optional): Ignored.
-
-        Raises:
-            oops.OopsSpiceError: Always. Its message names `time` if it is a single time,
-                and its cause is the exception that SPICE raised.
-        """
-
-        time = oops.Scalar.as_scalar(time)
-        raise oops.OopsSpiceError.from_spice_error(
-            self._cause, description=self._description,
-            time=float(time.vals) if time.shape == () else None,
-            filepath=self._filepath) from self._cause
-
-
 class VoyagerISS(oops.Host):
     """The Voyager ISS host: Snapshot constructors for Imaging Science Subsystem images.
 
@@ -482,9 +451,10 @@ class VoyagerISS(oops.Host):
 
     @staticmethod
     def from_file(fileinfo, *, return_all_planets=False, pds3_options=None,
-                  astrometry=False, target=None, lightsource=None, path=None, frame=None,
-                  cadence=None, fov=None, calibrations=None, timeshift=None,
-                  navigation=None, tracker=None, parallel=None, **kwargs):
+                  astrometry=False, select=None, target=None, lightsource=None,
+                  path=None, frame=None, cadence=None, fov=None, calibrations=None,
+                  timeshift=None, navigation=None, tracker=None, parallel=None,
+                  **kwargs):
         """A Snapshot object based on a given Voyager ISS image file or its label.
 
         Parameters:
@@ -507,6 +477,8 @@ class VoyagerISS(oops.Host):
             astrometry (bool, optional): True to specify that the returned Observation
                 will only be used for timing and astrometry. In this case, no data array
                 is read and returned in the Observation.
+            select (None): Must be None. An image file holds a single observation, so
+                there is nothing to select from; any other value raises an error.
             target (str | oops.Body, optional): Override for the default target Body of
                 the observation. Use "NONE" for inertial pointing, indicating that no
                 Solar System body was tracked.
@@ -543,8 +515,7 @@ class VoyagerISS(oops.Host):
                 time, different frame and FOV) relative to which this Observation has a
                 fixed offset. Note that no more than one of `parallel` and `tracker` can
                 be specified.
-            **kwargs: Additional keyword arguments; they are accepted and ignored. This
-                includes `select`.
+            **kwargs: Any other keyword argument raises an error.
 
         Returns:
             Snapshot: The observation, with subfields `dict`, `host`, `instrument`,
@@ -569,11 +540,12 @@ class VoyagerISS(oops.Host):
               these items come, appear in `dict` only as the items; LAB04, which holds
               more than the earth received time, appears under its own name too. Every
               other key of each source is kept under its own name, such as LABEL3 of the
-              header. A key whose value means unknown (a PDS3 null constant "UNK", "N/A"
-              or "NULL", None, such as the label's END, or the placeholder picture
-              number "0000Z1+000" or "0000Z2+000" of IMAGE_ID) is left out. Times are ISO
-              8601 strings in the form "1980-10-29T05:57:22.000", sets are lists, and
-              every value can be written as JSON.
+              header. A key whose value means unknown is left out, also inside an
+              OBJECT such as IMAGE: a placeholder text ("UNK", "UNKNOWN", "N/A", "NULL",
+              "---" or an empty string), None, such as the label's END, or the
+              placeholder picture number "0000Z1+000" or "0000Z2+000" of IMAGE_ID.
+              Times are ISO 8601 strings in the form "1980-10-29T05:57:22.000", sets are
+              lists, and every value can be written as JSON.
             - `label_dict` is the PDS3 label as a dictionary of its own keywords, with
               its times as ISO 8601 strings and its sets as lists, and without the keys
               whose values are None and the entries that the label parser adds beside
@@ -581,10 +553,11 @@ class VoyagerISS(oops.Host):
               "STOP_TIME_fmt", "^IMAGE_offset" and "objects"; present only when the
               label was read.
             - `header_dict` is the VICAR header as a dictionary of every parameter, as
-              it is. A parameter that occurs more than once, such as the TASK of each
-              step of the processing history, is keyed "NAME[n]" for its nth
-              occurrence, counting from 0, as in "TASK[0]"; present only when the image
-              file was read.
+              the file gives it, also after the image array is read, which leaves the
+              HOST of the machine that wrote the file. A parameter that occurs more than
+              once, such as the TASK of each step of the processing history, is keyed
+              "NAME[n]" for its nth occurrence, counting from 0, as in "TASK[0]";
+              present only when the image file was read.
             - `filter` is the FILTER_NAME as a PDS3 label spells it, such as "CLEAR" or
               "CH4_JS".
             - `label_target` is the TARGET_NAME, as a PDS3 label spells it.
@@ -609,9 +582,10 @@ class VoyagerISS(oops.Host):
               alone, as its FDS image number "hhhhh.mm", which is spelled the same way.
             - `filepath`, `basename`, `abspath` and `image_url` name the image file,
               even when the PDS3 label is given; with `astrometry`, as the label names
-              it, whether or not the file exists. They are absent if the parsed content
-              given has no file path. `abspath` is absent for a remote image file that
-              was not retrieved.
+              it. `abspath` is present only if the image file is on the local file
+              system or a remote one is already in the local cache, so it never names a
+              file that does not exist. All four are absent if the parsed content given
+              has no file path.
 
             The time of the image, the close of its shutter, is STOP_TIME, else
             IMAGE_TIME, and its exposure is EXPOSURE_DURATION. If no source read gives
@@ -622,11 +596,12 @@ class VoyagerISS(oops.Host):
             VGISS images, because the count recurs about every six years. The count
             is SPACECRAFT_CLOCK_STOP_COUNT, else IMAGE_NUMBER, else the FDS count with
             which the name of the image file begins, such as C3450201 for FDS 34502.01.
-            For the VGISS raw images whose labels give both, the count's time follows
-            STOP_TIME by a median of 0.9 s, but by whole FDS minutes of 48 s for some of
-            them. The planet is that of MISSION_PHASE_NAME, else that of the encounter in
-            progress at the time. A geometrically corrected image has a 1000x1000 FOV
-            and every other product an 800x800 one.
+            For the VGISS raw images whose labels give both, the count's time is a
+            median of 0.9 s after STOP_TIME, but whole FDS minutes of 48 s after it for
+            some of them and up to 7,625 s before it for a few. The planet is that of
+            MISSION_PHASE_NAME, else that of the encounter in progress at the time. A
+            geometrically corrected image has a 1000x1000 FOV and every other product an
+            800x800 one.
 
         Raises:
             oops.OopsSpiceError: If no source read gives a time and the clock kernel
@@ -643,10 +618,9 @@ class VoyagerISS(oops.Host):
                 the exception that SPICE raised.
             oops.host.HostFormatError: If no source read gives the spacecraft, the
                 camera or the exposure; neither a time nor a clock count; or, unless
-                `frame` is given, no spacecraft clock stop count; or if the image file
-                must be read and
-                parsed content given without a file path does not locate it. The message
-                names the missing items and the file.
+                `frame` is given, no spacecraft clock stop count. The message names the
+                missing items and the file. Also if the image file must be read and no
+                file path is known for the parsed content given.
             oops.host.PdsHostError: If the PDS3 label cannot be parsed by any method, or
                 names no IMAGE file.
             oops.host.VicarHostError: If the VICAR file cannot be read as an image: its
@@ -654,11 +628,20 @@ class VoyagerISS(oops.Host):
                 rather than an image, as the RESLOC and GEOMA files do.
             oops.host.WrongHostError: If the file, or the parsed content given, is not a
                 Voyager ISS image or label.
-            oops.OopsValueError: If `pds3_options` holds an option that the PDS3 label
-                parser does not accept.
+            oops.OopsTypeError: If a keyword argument is not one of those listed.
+            oops.OopsValueError: If `select` is not None, or if `pds3_options` holds an
+                option that the PDS3 label parser does not accept.
             OSError: If the file, or unless `astrometry` is True the image file a PDS3
                 label names, cannot be read.
         """
+
+        # A mistaken keyword, such as "astrometric", must not be dropped silently
+        if kwargs:
+            raise oops.OopsTypeError(f'unexpected keyword argument for '
+                                     f'VoyagerISS.from_file: {next(iter(kwargs))!r}')
+        if select is not None:
+            raise oops.OopsValueError(f'a Voyager ISS image file is one observation; '
+                                      f'select must be None, not {select!r}')
 
         VoyagerISS.initialize()     # define everything the first time through
 
@@ -687,14 +670,16 @@ class VoyagerISS(oops.Host):
         # of VGISS_6112.
         data = None
         if not astrometry:
-            if not isinstance(header, VicarImage):
+            image = header
+            if not isinstance(image, VicarImage):
                 if filepath is None:
-                    raise oops.host.HostFormatError('Voyager ISS content given without a '
-                                                    'file path does not locate its '
-                                                    'image file')
-                header = VoyagerISS._check_image_type(
+                    raise oops.host.HostFormatError('no file path is known for the '
+                                                    'Voyager ISS content given, so its '
+                                                    'image file cannot be read')
+                image = VoyagerISS._check_image_type(
                     VoyagerISS._read_vicar_image(filepath), filepath)
-            data = header.data_2d
+            data = image.data_2d
+            header = VoyagerISS._header_as_written(image if header is None else header)
 
         # Consumers write the dictionaries out as JSON, and a header's processing history
         # repeats its TASK, USER and DAT_TIM parameters (#18). A label that
@@ -727,7 +712,6 @@ class VoyagerISS(oops.Host):
                    'if_scale': None if header is None else VoyagerISS._if_scale(header)}
         return VoyagerISS._make_snapshot(dict_, filepath=filepath, data=data,
                                          sources=sources,
-                                         fetched=label is None or not astrometry,
                                          return_all_planets=return_all_planets,
                                          check_pointing=True, overrides=overrides)
 
@@ -899,6 +883,30 @@ class VoyagerISS(oops.Host):
                                            f'{err}') from err
 
     @staticmethod
+    def _header_as_written(vic):
+        """The VICAR header of an image file as the file gives it.
+
+        Reading the image array sets the header's HOST, and BHOST if there is a binary
+        header, to the machine that reads it, so a VicarImage read from a file no longer
+        gives the machine that wrote the file, as its VicarLabel does.
+
+        Parameters:
+            vic (VicarLabel | VicarImage): The VICAR header.
+
+        Returns:
+            VicarLabel | VicarImage: The header of the file of a VicarImage read from a
+            file, read again without its array; otherwise `vic`.
+
+        Raises:
+            OSError: If the file cannot be read.
+        """
+
+        if not isinstance(vic, VicarImage) or vic.filepath is None:
+            return vic
+        # The same parser has just read this header, as part of the VicarImage
+        return VicarLabel(vic.filepath, strict=False)
+
+    @staticmethod
     def _if_scale(header):
         """The factor that converts a calibrated product's data to I/F.
 
@@ -932,8 +940,9 @@ class VoyagerISS(oops.Host):
         Parameters:
             filepath (str | pathlib.Path | FCPath): The path to the PDS label of a VGISS
                 raw image index, such as "VGISS_6109_raw_image_index.lbl", which has one
-                row per raw image. The volume index, "VGISS_6109_index.lbl", which has a
-                row for every product, is not accepted.
+                row per raw image, as the PDS Ring-Moon Systems Node metadata holds it.
+                The index of every product, "VGISS_6109_index.lbl", is not accepted, nor
+                is a volume's own index, such as "VGISS_6109/INDEX/RAWIMAGES.LBL".
             supplement (str | pathlib.Path | FCPath | object, optional): The path to the
                 PDS label of the supplemental index, whose columns are merged into each
                 row; a raw image index needs its supplement. Its rows must name the same
@@ -1009,8 +1018,8 @@ class VoyagerISS(oops.Host):
             and `abspath` when available, as described for :meth:`from_file`.
 
             `dict` is the row, merged with its row of the supplement, without the columns
-            whose values are null (the indexes' EXPOSURE_DURATION of -99.9999 and their
-            "UNK" times, which no real value shares), and with each value a Python str,
+            whose values mean unknown, as :meth:`from_file` lists them, the indexes'
+            EXPOSURE_DURATION of -99.9999 included, and with each value a Python str,
             int, float or bool. The labels of the raw image indexes give the
             EXPOSURE_DURATION column two bytes fewer than the table holds; the column is
             read at its full width, so that an exposure of 0.0075 s is not read as 0.0 s.
@@ -1023,8 +1032,10 @@ class VoyagerISS(oops.Host):
             "<holdings>/metadata/VGISS_6xxx/VGISS_6109/", the volume is
             "<holdings>/volumes/VGISS_6xxx/VGISS_6109"; for an index anywhere else, it is
             the directory VOLUME_NAME beside the index. `abspath` is present only if the
-            image file is local or a remote one is already in the local cache. Every row
-            gives a Snapshot. The pointing is not checked: if `frame` is not given and
+            image file is on the local file system or a remote one is already in the
+            local cache; no directory is created. A row that raises an error ends the
+            iteration, so the rows after it are reached only with a `filter` that leaves
+            it out. The pointing is not checked: if `frame` is not given and
             the SPICE kernels cannot supply an image's pointing, evaluating its frame
             raises :class:`oops.OopsSpiceError`, as :meth:`from_file` describes.
 
@@ -1032,21 +1043,27 @@ class VoyagerISS(oops.Host):
             oops.OopsSpiceError: If a row gives no time and the clock kernel cannot
                 convert its clock count, as :meth:`from_file` describes; raised when the
                 iteration reaches that row.
-            oops.OopsTypeError: If a keyword argument is not one of those listed.
-            oops.OopsValueError: If `select` is not None.
+            oops.OopsTypeError: If a keyword argument is not one of those listed, or a
+                range in `filter` cannot be compared with the values of its column.
+            oops.OopsValueError: If `select` is not None, `filter` names a column that
+                the index does not have, or `pds3_options` holds an option that the PDS3
+                label parser does not accept.
             oops.host.HostFormatError: If a row gives no exposure, camera or spacecraft;
                 no time and no clock count; or, unless `frame` is given, no spacecraft
                 clock stop count. The message names the missing item and the image file.
                 It is raised when the iteration reaches that row.
             FileNotFoundError: If the supplement does not exist.
-            oops.host.HostIndexError: If `supplement` is None while `row_dicts` is not
+            oops.host.HostIndexError: If `filepath` is a volume's own index, in the
+                volume's INDEX directory; if `supplement` is None while `row_dicts` is not
                 given; if `supplement` is `oops.Host.SUPPLEMENT` and the name of
                 `filepath` contains no "_raw_image_index"; if an index row has no
                 supplement row or a supplement row belongs to no index row; if, where the
                 two tables list the files in different orders, either lists a file twice;
+                if a table cannot be read because its label lacks the table it points to;
                 or, for `row_dicts` without STOP_TIME, if the index has no row for one of
                 them.
-            oops.host.PdsHostError: If the label of `filepath` cannot be parsed.
+            oops.host.PdsHostError: If the label of `filepath` or of the supplement cannot
+                be parsed.
             oops.host.WrongHostError: If `filepath` is not a Voyager ISS index.
             OSError: If `filepath`, or a `supplement` that is specified, does not exist or
                 cannot be read.
@@ -1061,6 +1078,15 @@ class VoyagerISS(oops.Host):
                                       f'observation; select must be None, not '
                                       f'{select!r}')
 
+        # A volume's own index, such as INDEX/RAWIMAGES.LBL, has no supplement, and its
+        # label names an INDEX_TABLE that it calls TABLE
+        filepath = FCPath(filepath)
+        if filepath.parent.name.upper() == _VOLUME_INDEX_DIR:
+            raise oops.host.HostIndexError(
+                'Voyager ISS reads the Ring-Moon Systems Node metadata index, such as '
+                '"VGISS_6109_raw_image_index.lbl", not a volume\'s own index: '
+                f'{filepath}')
+
         VoyagerISS.initialize()
 
         # Read and filter the index table. The supplement is required, so None is refused
@@ -1068,7 +1094,6 @@ class VoyagerISS(oops.Host):
         # columns, such as rows read from the index alone with the exposure cut short,
         # are read again here. Naming the supplement rejects any index but a raw image
         # index.
-        filepath = FCPath(filepath)
         if supplement is None and row_dicts is None:
             raise oops.host.HostIndexError(f'Voyager ISS raw image index needs its '
                                            f'supplemental index: {filepath}')
@@ -1103,10 +1128,8 @@ class VoyagerISS(oops.Host):
             for row_dict in row_dicts:
                 row_dict = _plain_row(row_dict)
                 image = VoyagerISS._index_image_path(filepath, row_dict)
-                fetched = (image.is_local()
-                           or pathlib.Path(image.get_local_path()).exists())
                 yield VoyagerISS._make_snapshot(
-                    _without_nulls(row_dict), filepath=image, fetched=fetched,
+                    _without_nulls(row_dict), filepath=image,
                     return_all_planets=return_all_planets, check_pointing=False,
                     overrides=overrides)
 
@@ -1270,7 +1293,7 @@ class VoyagerISS(oops.Host):
         return again
 
     @staticmethod
-    def _make_snapshot(dict_, filepath, data=None, *, sources=None, fetched=True,
+    def _make_snapshot(dict_, filepath, data=None, *, sources=None,
                        return_all_planets=False, check_pointing, overrides):
         """A Snapshot built from merged metadata or a row of an index.
 
@@ -1283,8 +1306,6 @@ class VoyagerISS(oops.Host):
                 subfield.
             sources (dict[str, Any], optional): The values of the subfields `label_dict`,
                 `header_dict` and `if_scale`, each None if it is absent.
-            fetched (bool, optional): False if a remote image file is not in the local
-                cache, because it was not read.
             return_all_planets (bool, optional): Include kernels for all planets, not just
                 the planet of the encounter.
             check_pointing (bool): True to require, if `frame` is not overridden, that
@@ -1356,7 +1377,9 @@ class VoyagerISS(oops.Host):
                                                        filepath, name)
         ck_frame = params['frame']
 
-        VoyagerISS._apply_path_overrides(params, filepath, fetched, overrides)
+        # This names the image file too: `abspath` only if the file is local or already
+        # in the local cache, and no directory is created
+        oops.Host._apply_overrides(params, filepath, **overrides)
 
         # A frame without pointing raises OopsSpiceError when it is evaluated, here at the
         # midtime after any cadence or time shift override
@@ -1399,27 +1422,6 @@ class VoyagerISS(oops.Host):
                                                - _CAMERA_FRAME_OFFSET[camera]))
 
         return obs
-
-    @staticmethod
-    def _apply_path_overrides(params, filepath, fetched, overrides):
-        """Apply the overrides to the Snapshot parameters and name the image file.
-
-        Parameters:
-            params (dict): The Snapshot parameters, modified in place.
-            filepath (FCPath | str | None): The path to the image file; None if it is
-                not known, in which case no path parameters are set.
-            fetched (bool): False if a remote image file is not in the local cache;
-                `abspath`, which would name the missing cache file, is then left out.
-            overrides (dict[str, Any]): The standard overrides.
-        """
-
-        oops.Host._apply_overrides(params, '' if filepath is None else filepath,
-                                   **overrides)
-        if filepath is None:
-            del params['filepath']
-            del params['basename']
-        elif not fetched and not isinstance(filepath, str) and not filepath.is_local():
-            del params['abspath']
 
     @staticmethod
     def _required(dict_, key, name):
@@ -1482,9 +1484,10 @@ class VoyagerISS(oops.Host):
         cameras took the VGISS images (`_Voyager.IMAGING_PERIODS`). The
         clock kernel converts the count to TDB at the spacecraft, the same time scale as
         the labels' times, which are UTC at the spacecraft: for the 76,635 VGISS raw
-        images that give both, the count's time follows STOP_TIME by a median of 0.9 s,
-        within 3 s for 79% of them, and by whole FDS minutes of 48 s for most of the
-        rest, because a count can be stamped minutes after the shutter closed.
+        images that give both, the count's time is a median of 0.9 s after STOP_TIME
+        and within 3 s of it for 79% of them. For most of the rest it is whole FDS
+        minutes of 48 s later, because a count can be stamped minutes after the shutter
+        closed, and for 12 it is more than a second earlier, by up to 7,625 s.
 
         Parameters:
             dict_ (dict): The merged metadata or index row.
@@ -1574,11 +1577,11 @@ class VoyagerISS(oops.Host):
                 item.
 
         Returns:
-            oops.frame.Cmatrix | _NoPointingFrame: An unregistered frame relative to
-            J2000; if the SPICE kernels cannot supply the pointing (the clock kernel
-            cannot encode the count, the C kernels hold no record for it, or the frame
-            kernel does not connect the scan platform to the camera), a frame that raises
-            :class:`oops.OopsSpiceError` when it is evaluated.
+            oops.frame.Cmatrix | oops.frame.SpiceErrorFrame: An unregistered frame
+            relative to J2000; if the SPICE kernels cannot supply the pointing (the clock
+            kernel cannot encode the count, the C kernels hold no record for it, or the
+            frame kernel does not connect the scan platform to the camera), a frame that
+            raises :class:`oops.OopsSpiceError` when it is evaluated.
 
         Raises:
             oops.host.HostFormatError: If neither `dict_` nor the name of the image file
@@ -1599,8 +1602,9 @@ class VoyagerISS(oops.Host):
                                                f'VG{vgr}_ISS{camera[0]}A', 0.)
         # Only what cspyce raises is missing SPICE data; anything else propagates (#19)
         except _SPICE_ERRORS as err:
-            return _NoPointingFrame(err, filepath=filepath,
-                                    description=f'no Voyager {vgr} ISS {camera} pointing')
+            return oops.frame.SpiceErrorFrame(
+                err, description=f'no Voyager {vgr} ISS {camera} pointing',
+                filepath=filepath)
 
         return oops.frame.Cmatrix(oops.Matrix3(platform_to_camera)
                                   * oops.Matrix3(j2000_to_platform))
@@ -1716,12 +1720,21 @@ class VoyagerISS(oops.Host):
 
     @staticmethod
     def _detect_in_index(label):
-        """None, because a VGISS index label does not name the host or instrument.
+        """Whether the given parsed index label describes this host's data.
 
-        The host is then identified from the rows by :meth:`_detect_in_row`.
+        A VGISS index label, in the metadata or in a volume's INDEX directory, names the
+        host and instrument only in its DATA_SET_ID, such as
+        "VG1/VG2-S-ISS-2/3/4/6-PROCESSED-V1.0".
+
+        Returns:
+            bool | None: True if DATA_SET_ID names the Voyager ISS images; False if it
+            names another data set; None if the label gives no DATA_SET_ID, so that the
+            host is identified from the rows by :meth:`_detect_in_row`.
         """
 
-        return None
+        if 'DATA_SET_ID' not in label:
+            return None
+        return _ISS_DATA_SET.match(str(label['DATA_SET_ID'])) is not None
 
     @staticmethod
     def _detect_in_row(row_dict):
@@ -1745,8 +1758,11 @@ class VoyagerISS(oops.Host):
         ignored.
 
         Parameters:
-            planets (list, optional): A list of planets to pass to
-                :meth:`~oops.Body.define_solar_system`. None or 0 means all.
+            planets (int | collections.abc.Sequence[int], optional): The number of a
+                planet, from 1 for Mercury to 9 for Pluto, or a sequence of such numbers,
+                such as (6,) for Saturn alone, to pass to
+                :meth:`~oops.Body.define_solar_system`, which defines each planet named
+                and its moons. None or 0 means all.
             asof (str, optional): Only use SPICE kernels that existed before this date;
                 None to ignore.
             irregulars (bool, optional): True to include the irregular satellites; False

@@ -15,7 +15,7 @@ The detectors and support methods that a Host subclass overrides or calls, such 
 """
 
 import pathlib
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Any
 
 from filecache import FCPath
@@ -42,33 +42,36 @@ class VoyagerISS(Host):
     # raises oops.OopsSpiceError if the clock kernel cannot convert the count. An image
     # for which no source read gives the exposure, camera, spacecraft, a time or a clock
     # count, or, unless `frame` is given, a clock count, raises
-    # oops.host.HostFormatError; a label
-    # that no parser method reads, or that names no IMAGE file, raises
-    # oops.host.PdsHostError; a VICAR file that cannot be read as an image raises
-    # oops.host.VicarHostError; another mission's file or parsed content raises
-    # oops.host.WrongHostError. Given the image file, only it is read; given a PDS3
-    # label, the label and its image file are read and their metadata merged, except
-    # that with astrometry=True the label is read alone and the image file need not
-    # exist. A subfield that no source read gives, such as if_scale, is absent. The
-    # `spacecraft` subfield, the int 1 or 2, tells Voyager 1 from Voyager 2 on every
-    # input.
+    # oops.host.HostFormatError; a label that no parser method reads, or that names no
+    # IMAGE file, raises oops.host.PdsHostError; a VICAR file that cannot be read as an
+    # image raises oops.host.VicarHostError; another mission's file or parsed content
+    # raises oops.host.WrongHostError. select must be None (oops.OopsValueError), and
+    # any other keyword raises oops.OopsTypeError. Given the image file, only it is
+    # read; given a PDS3 label, the label and its image file are read and their metadata
+    # merged, except that with astrometry=True the label is read alone and the image
+    # file need not exist. A subfield that no source read gives, such as if_scale, is
+    # absent. The `spacecraft` subfield, the int 1 or 2, tells Voyager 1 from Voyager 2
+    # on every input.
     @staticmethod
     def from_file(  # type: ignore[override]
         fileinfo: str | pathlib.Path | FCPath | Pds3Label | VicarLabel
         | VicarImage, *,
         return_all_planets: bool = False, pds3_options: dict[str, Any] | None = None,
-        astrometry: bool = False, target: str | Body | None = None,
-        lightsource: LightSource | None = None, path: str | Path | None = None,
-        frame: str | Frame | None = None, cadence: Cadence | None = None,
-        fov: FOV | None = None,
+        astrometry: bool = False,
+        select: int | slice | str | tuple[int | slice | str, ...] | None = None,
+        target: str | Body | None = None, lightsource: LightSource | None = None,
+        path: str | Path | None = None, frame: str | Frame | None = None,
+        cadence: Cadence | None = None, fov: FOV | None = None,
         calibrations: Calibration | list[Calibration] | None = None,
         timeshift: tuple[float, str] | None = None,
         navigation: tuple[float, ...] | None = None, tracker: str | None = None,
         parallel: Observation | None = None, **kwargs: Any) -> Snapshot: ...
-    # Every row is one Snapshot. The supplement is required: None raises
-    # oops.host.HostIndexError unless row_dicts is given. select must be None
-    # (oops.OopsValueError), and any other keyword raises oops.OopsTypeError. The
-    # iterator builds each row's Snapshot when it reaches the row.
+    # Every row is one Snapshot. Only a raw image index of the Ring-Moon Systems Node
+    # metadata is read; a volume's own index raises oops.host.HostIndexError. The
+    # supplement is required: None raises oops.host.HostIndexError unless row_dicts is
+    # given. select must be None (oops.OopsValueError), and any other keyword raises
+    # oops.OopsTypeError. The iterator builds each row's Snapshot when it reaches the
+    # row.
     @staticmethod
     def from_index(
         filepath: str | pathlib.Path | FCPath, *,
@@ -86,7 +89,7 @@ class VoyagerISS(Host):
         navigation: tuple[float, ...] | None = None, tracker: str | None = None,
         parallel: Observation | None = None, **kwargs: Any) -> Iterator[Snapshot]: ...
     @staticmethod
-    def initialize(*, planets: list[Any] | None = None, asof: str | None = None,
-        irregulars: bool = True) -> None: ...
+    def initialize(*, planets: int | Sequence[int] | None = None,
+        asof: str | None = None, irregulars: bool = True) -> None: ...
 
 ##########################################################################################

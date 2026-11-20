@@ -23,16 +23,26 @@ it. To build every row at once, pass the iterator to ``list()``:
 
    snapshots = list(VoyagerISS.from_index(index))
 
+An error in a row ends the iteration, and the iterator gives no rows after it. To reach
+the rows that follow, leave that row out with the ``filter`` argument, described below.
+
 The index and its supplement
 ============================
 
-The host reads the raw image index of a VGISS volume, such as
-``VGISS_6109_raw_image_index.lbl``, which has one row per raw image, and the
+The host reads the PDS3 indexes that the Ring-Moon Systems Node keeps in the
+``metadata`` tree of its holdings. For each VGISS volume, these are the raw image index,
+such as ``VGISS_6109_raw_image_index.lbl``, which has one row per raw image, and the
 supplemental index, ``VGISS_6109_supplemental_index.lbl``, whose rows give further
-values for the same images. The host needs both. The volume index,
-``VGISS_6109_index.lbl``, has a row for every product of every image, and the host does
-not accept it. Each row of the supplement is merged into the matching row of the index;
-where both tables give a column, the index's value is kept.
+values for the same images. The host needs both. Each row of the supplement is merged
+into the matching row of the index; where both tables give a column, the index's value
+is kept.
+
+Two other PDS3 indexes are not accepted, and both raise
+:exc:`~oops.host.HostIndexError`. One is the index of every product,
+``VGISS_6109_index.lbl``, which has a row for each product of each image. The other is
+an index that a volume keeps in its own ``INDEX`` directory, such as
+``VGISS_6109/INDEX/RAWIMAGES.LBL``, which has no supplement. The error's message points
+to the metadata index.
 
 The ``supplement`` argument chooses the supplemental index:
 
@@ -48,7 +58,7 @@ with the supplement row in the same position. When they do not, each index row i
 merged with the supplement row that has the same ``VOLUME_NAME`` and
 ``FILE_SPECIFICATION_NAME``. The host raises :exc:`~oops.host.HostIndexError` if an image
 appears in only one of the tables, or if, when the orders differ, either table lists an
-image twice. The error names the first few such images and both tables.
+image twice. The error gives the first few such images and both tables.
 
 The labels of the raw image indexes give the ``EXPOSURE_DURATION`` column a width of 7
 bytes, while its format and the table itself give it 9. Read as the labels say, an
@@ -71,7 +81,8 @@ Other arguments
 ``filter``
     A dictionary of column names and the values to keep. A row is kept when each column
     equals its value, is one of a set of values, or falls in a range given as a tuple of
-    two values.
+    two values. A column that the index does not have raises an error that gives the
+    column.
 
 ``select``
     Must be None. Each row is one image, so there is nothing to select, and any other
@@ -90,9 +101,11 @@ What one row gives
 Each row gives a :class:`~oops.observation.Snapshot` of the raw image, with its 800 by
 800 field of view and no ``data``. Its ``dict`` subfield holds the merged row, with each
 value as a Python string, integer, float, or Boolean, and with the same treatment of
-missing values as a label (see :doc:`user_guide_metadata`). The tables' null constants,
-an exposure of -99.9999 and a time of ``UNK``, are left out, since no real value shares
-them.
+missing values as a label (see :doc:`user_guide_metadata`). The tables also give an
+exposure of -99.9999 when it is unknown, and that value is left out too. Where a label
+writes ``UNK``, the raw image indexes sometimes write ``UNKNOWN``: for the earth
+received time of 1,524 images and for the picture number of 250. Both mean that no value
+is known.
 
 The subfields are those of an image read from its label (see
 :doc:`user_guide_metadata`), except ``data``, ``label_dict``, ``header_dict``, and
@@ -101,11 +114,14 @@ clock partition, which a label does not give.
 
 Every row gives a Snapshot, unless a row lacks an item that the host cannot do without
 (see :doc:`user_guide_errors`). One row does: the dark frame ``C3940530`` of VGISS_6201
-gives no exposure, so reading that volume's index raises
-:exc:`~oops.host.HostFormatError`. The host does not check the C kernels for the
-pointing of an index row. If the kernels hold no pointing for an image, its row still
-gives a Snapshot, and :exc:`oops.OopsSpiceError` is raised only when the Snapshot's
-frame is evaluated.
+gives no exposure, so the iteration over that volume's index raises
+:exc:`~oops.host.HostFormatError` at that row and gives no rows after it. To read the
+rest of that volume, use ``filter`` to keep only the rows you want, such as a range of
+``IMAGE_NUMBER`` values that starts after the dark frame.
+
+The host does not check the C kernels for the pointing of an index row. If the kernels
+hold no pointing for an image, its row still gives a Snapshot, and
+:exc:`oops.OopsSpiceError` is raised only when the Snapshot's frame is evaluated.
 
 File paths
 ==========
@@ -121,12 +137,16 @@ the location of the index:
 - For an index anywhere else, the volume is the directory beside the index that has the
   row's ``VOLUME_NAME``.
 
-``abspath`` is present only when the image file is local or already in the local cache.
+``abspath`` is present only when the image file is on the local file system, or is a
+remote file that is already in the local cache. Reading an index never creates a
+directory, even when the volume is not where the index places it.
 
 Reading an index through oops.Host
 ==================================
 
-:meth:`oops.host.Host.from_index` recognizes a raw image index from its first row and
-passes it, with its other arguments, to
-:meth:`~host_voyager.oops.iss.VoyagerISS.from_index`, so the two give the same
-Snapshots.
+:meth:`oops.host.Host.from_index` recognizes a VGISS index from the ``DATA_SET_ID`` in its
+PDS3 label, such as ``VG1/VG2-S-ISS-2/3/4/6-PROCESSED-V1.0``, and passes the index, with
+all of its other arguments, to :meth:`~host_voyager.oops.iss.VoyagerISS.from_index`. The
+host reads the rows itself, with the supplement and the full width of the exposure
+column, so the two give the same Snapshots, also when ``supplement`` gives a path. A
+volume's own index raises the same :exc:`~oops.host.HostIndexError` either way.

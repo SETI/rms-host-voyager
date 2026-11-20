@@ -35,10 +35,11 @@ The disagreement
 ================
 
 The SPICE clock kernel converts an FDS count to a time. For the 76,635 VGISS raw images
-whose labels give both, the image's clock stop count converts to a time that follows its
-``STOP_TIME`` by a median of 0.9 s, and by at most 3 s for 79% of them. For most of the
+whose labels give both, the image's clock stop count converts to a time a median of
+0.9 s after its ``STOP_TIME``, and within 3 s of it for 79% of them. For most of the
 others the count falls a whole number of FDS minutes later: 48, 96, 145, 240, 768, or
-912 s, and in a few cases much more. For C3450201, ``STOP_TIME`` is
+912 s, and in a few cases much more. For 12 images it falls more than a second earlier,
+by up to 7,625 s for C4201035. For C3450201, ``STOP_TIME`` is
 1980-10-29T05:57:22.00, while its count, 34502:01:001, converts to 06:10:10.7, 768.7 s
 later.
 
