@@ -13,7 +13,9 @@ dependencies = [
   "numpy>=2.0",
   "rms-filecache>=2.2.0",   # 2.2.0 makes FCPath.is_local() a method
   "rms-julian>=3.0.2",      # 3.0.2 drops pyparsing's deprecated camelCase API
-  "rms-oops>=0.5.0",        # 0.5.0 adds oops.OopsSpiceError; also provides spicedb
+  # Until rms-oops 0.5.0 is released (SETI/rms-oops PR #242), install the branch that adds
+  # oops.OopsSpiceError and the Host changes; restore "rms-oops>=0.5.0" after it merges.
+  "rms-oops @ git+https://github.com/SETI/rms-oops@rf_261118_oops_spice_error",
   "rms-pdsparser>=2.4.0",   # 2.4.0 is the minimum of rms-oops
   "rms-pdstable>=1.0.1",    # 1.0.1 accepts an FCPath label path
   "rms-vicar>=1.4.0",       # 1.4.0 adds as_dict
