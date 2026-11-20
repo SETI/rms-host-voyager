@@ -166,17 +166,17 @@ _IF_LINE_UNITS = 10000.
 # numeric columns of a VGISS raw image index. Either counts as missing. Besides the PDS3
 # null constants, the raw image indexes give EARTH_RECEIVED_TIME "UNKNOWN" (1,524 rows)
 # and IMAGE_ID "UNKNOWN" (250 rows) where the labels give "UNK", and NOTE "" (36,095
-# rows); "---" is the archive's other placeholder text. Until the indexes are corrected
-# to write "UNK" (SETI/rms-data-projects#260, item 5), "UNKNOWN" is read as missing; a
-# corrected index gives "UNK", which is missing too.
+# rows); "---" is the archive's other placeholder text. Until the index is corrected,
+# "UNKNOWN" is read as missing. A corrected table gives "UNK", which is missing too.
+# SETI/rms-data-projects#260 item 5
 _NULL_STRINGS = {'UNK', 'UNKNOWN', 'N/A', 'NULL', '', '---'}
 _NULL_NUMBER = -99.9999
 
 # Placeholders that stand for an unknown value of one item and are never a real value of
 # it: the picture number "0000Z1+000" or "0000Z2+000", which 34 of the 76,652 VGISS raw
-# images give in their labels and indexes, as their VICAR headers give it in LAB02. An
-# index corrected to write a null instead (SETI/rms-data-projects#260, item 3) gives a
-# null, which is missing as well.
+# images give in their labels and indexes, as their VICAR headers give it in LAB02. Until
+# the index is corrected, it is read as missing. A corrected table gives a null, which is
+# missing as well. SETI/rms-data-projects#260 item 3
 _PLACEHOLDERS = {'IMAGE_ID': re.compile(r'0000Z[12]\+000')}
 
 # The two-digit years of a SCET or ERT: VGISS images date from 1978 to 1989. A garbled
@@ -195,10 +195,10 @@ _ERT_FORMAT  = '%Y-%m-%dT%H:%M:%S'
 # drops the last two characters: 0.0450 s becomes 0.04 s, 0.0075 s becomes 0.0 s, and the
 # null constant -99.9999 becomes -99.99. All 87 volumes (the *999 cumulative indexes
 # aside) do this, for 1,597 of their 76,652 rows; no other column of these indexes or of
-# their supplements differs from its FORMAT. Until the labels are corrected to BYTES = 9
-# (SETI/rms-data-projects#260, item 1), a column is widened to its FORMAT's width only
-# where its BYTES are fewer, which is decided from the label of each index, so a
-# corrected label is read as it is.
+# their supplements differs from its FORMAT. Until the index is corrected, a column is
+# widened to its FORMAT's width where its BYTES are fewer, which is decided from the label
+# of each index. A corrected label gives BYTES = 9, which is left as it is.
+# SETI/rms-data-projects#260 item 1
 _FORMAT_WIDTH = re.compile(r'[A-Z](?P<width>\d+)')
 
 
@@ -807,12 +807,13 @@ class VoyagerISS(oops.Host):
             oops.host.WrongHostError: If `parsed` is not a Voyager ISS label or header.
         """
 
+        name = (f'{type(parsed).__name__} without a file path' if parsed.filepath is None
+                else parsed.filepath)
         if isinstance(parsed, Pds3Label):
             if not VoyagerISS._detect_in_pds3(parsed):
-                raise oops.Host._no_host_error([VoyagerISS], 'PDS3 label',
-                                               parsed.filepath)
+                raise oops.Host._no_host_error([VoyagerISS], 'PDS3 label', name)
         elif not VoyagerISS._detect_in_vicar(parsed):
-            raise oops.Host._no_host_error([VoyagerISS], 'VICAR file', parsed.filepath)
+            raise oops.Host._no_host_error([VoyagerISS], 'VICAR file', name)
         return parsed
 
     @staticmethod
@@ -1467,6 +1468,9 @@ class VoyagerISS(oops.Host):
             if key in dict_:
                 return (julian.tdb_from_tai(julian.tai_from_iso(dict_[key])), False)
 
+        # 17 rows of the indexes, and their labels, give UNK for every time. Until the
+        # index is corrected, their time comes from the clock count. A corrected table
+        # gives a time, which is used as it is. SETI/rms-data-projects#260 item 2
         count = VoyagerISS._clock_count(dict_, name)
         if count is None:
             raise oops.host.HostFormatError(f'Voyager ISS image {name} has no STOP_TIME, '

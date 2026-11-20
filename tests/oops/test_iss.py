@@ -1407,13 +1407,17 @@ def test_from_file_vicar_table_is_not_an_image(tmp_path: pathlib.Path,
 def test_from_file_parsed_label_of_another_host() -> None:
     label = pdsparser.Pds3Label('PDS_VERSION_ID = PDS3\r\nSPACECRAFT_NAME = "GALILEO '
                                 'ORBITER"\r\nINSTRUMENT_ID = "SSI"\r\nEND\r\n')
-    with pytest.raises(oops.host.WrongHostError, match='not a Voyager ISS PDS3 label'):
+    with pytest.raises(oops.host.WrongHostError,
+                       match=r'^not a Voyager ISS PDS3 label: Pds3Label without a file '
+                             r'path$'):
         VoyagerISS.from_file(label, astrometry=True)
 
 
 def test_from_file_parsed_vicar_header_of_another_host() -> None:
     vic = vicar.VicarImage.from_array(np.zeros((8, 8), dtype='uint8'))
-    with pytest.raises(oops.host.WrongHostError, match='not a Voyager ISS VICAR file'):
+    with pytest.raises(oops.host.WrongHostError,
+                       match=r'^not a Voyager ISS VICAR file: VicarImage without a file '
+                             r'path$'):
         VoyagerISS.from_file(vic)
 
 
