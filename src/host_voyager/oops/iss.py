@@ -1087,7 +1087,7 @@ class VoyagerISS(oops.Host):
                 `oops.Host.SUPPLEMENT` and the name of `filepath` lacks
                 "_raw_image_index", also when `row_dicts` is given; or if a label does
                 not describe a table that can be read, as when it lacks the table it
-                points to. During the iteration,
+                points to. During the iteration, only if `row_dicts` is not given,
                 counting rows from 0: at a row where the index row and the supplement row
                 in the same position give different files; at the row where the
                 supplement ends before the index; after the last row a table holds, if it

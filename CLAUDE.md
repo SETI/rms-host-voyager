@@ -163,8 +163,9 @@ apply here to the stubs described below.
   `_supplement_path()` to replace `_raw_image_index` with `_supplemental_index`, and to
   raise `HostIndexError` for an index whose name lacks it; `from_index()` calls it with
   `row_dicts` too, so with the default supplement the full index is refused when the call
-  is made, with or without `row_dicts`. Given a supplement path, the name is not checked, and the full
-  index raises `HostIndexError` at row 0, whose file differs from the supplement's. The
+  is made, with or without `row_dicts`. Given a supplement path, the name is not checked,
+  and the full index raises `HostIndexError` at row 0, whose file differs from the
+  supplement's; given rows (`row_dicts`) are never compared with the supplement's. The
   supplement is required: `supplement=None` or `''` (which oops would take to mean "read
   the index alone") raises `HostIndexError` unless `row_dicts` is given. `select` other
   than None raises `OopsValueError`, through `oops.Host._check_select()`; an unknown

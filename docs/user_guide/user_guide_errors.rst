@@ -79,6 +79,9 @@ Reading a PDS3 index
     After the last row: the supplement has more rows than the index, or a table holds
     more rows than its label says.
 
+    The errors during and after the iteration come from reading the tables, so they are
+    never raised when ``row_dicts`` is given.
+
     The tables are checked only for these errors. A value that cannot be read as the
     number its column describes gives a warning, and the row keeps the value as text.
     A row that is shorter than its label says is read as it is.
