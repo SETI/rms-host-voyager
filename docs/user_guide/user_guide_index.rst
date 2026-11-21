@@ -45,8 +45,9 @@ is kept.
 The metadata index of every product, ``VGISS_6109_index.lbl``, which has a row for each
 product of each image, is not accepted. With the default supplement, it raises
 :exc:`~oops.host.HostIndexError` when the call is made, also when ``row_dicts`` is
-given. With a supplement path, the iteration raises :exc:`~oops.host.HostIndexError` at
-the first row, whose file differs from the supplement's.
+given. With a supplement path and without ``row_dicts``, the iteration raises
+:exc:`~oops.host.HostIndexError` at the first row, whose file differs from the
+supplement's. Rows given in ``row_dicts`` are not compared with the supplement's.
 
 The ``supplement`` argument chooses the supplemental index:
 

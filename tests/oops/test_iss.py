@@ -2089,6 +2089,16 @@ def test_from_index_uses_given_rows_as_they_are() -> None:
     assert obs[0].time[1] == pytest.approx(tdb('1980-10-29T05:57:22'), abs=1.e-6)
 
 
+def test_from_index_does_not_pair_given_rows_with_a_named_supplement() -> None:
+    """Given rows are used as they are, so a named supplement's rows are not compared with
+    them: the rows in reverse order, which differ from the supplement's from row 0, all
+    give Snapshots."""
+
+    rows = _merged_rows()[::-1]
+    obs = list(VoyagerISS.from_index(INDEX, supplement=SUPPLEMENT, row_dicts=rows))
+    assert len(obs) == INDEX_ROWS
+
+
 def test_from_index_reads_given_rows_as_the_iteration_proceeds() -> None:
     """Given rows are taken one at a time, so a row that cannot be produced stops the
     iteration only when it is reached."""
