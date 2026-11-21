@@ -81,13 +81,14 @@ class VoyagerISS(Host):
     # first row only if the index label lacks DATA_SET_ID; the iterator reads the rows of
     # the index and its supplement a few at a time, in step, and builds each row's
     # Snapshot when it reaches the row. A row whose files differ between the two tables
-    # raises oops.host.HostIndexError at that row; rows given in row_dicts are not
-    # compared with the supplement's. Unless row_dicts is given, pds3_options is checked
-    # when the call is made, also when label is given, and an invalid one raises
-    # oops.OopsValueError. A Snapshot never has an abspath, because the image files are
-    # not retrieved. Host takes **kwargs here too, and the runtime does not, so that
-    # Python refuses a keyword not listed with TypeError; and Host accepts other values of
-    # select.
+    # raises oops.host.HostIndexError at that row. Rows given in row_dicts take the place
+    # of the tables: the call then reads neither label, so the checks of the labels and of
+    # pds3_options are not made, and the rows are not compared with the supplement's.
+    # Otherwise pds3_options is checked when the call is made, also when label is given,
+    # and an invalid one raises oops.OopsValueError. A Snapshot never has an abspath,
+    # because the image files are not retrieved. Host takes **kwargs here too, and the
+    # runtime does not, so that Python refuses a keyword not listed with TypeError; and
+    # Host accepts other values of select.
     @staticmethod
     def from_index(  # type: ignore[override]
         filepath: str | pathlib.Path | FCPath, *,
