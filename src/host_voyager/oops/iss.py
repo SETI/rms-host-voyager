@@ -957,6 +957,13 @@ class VoyagerISS(oops.Host):
         time, in step, and builds each row's Snapshot when it reaches that row, so the
         tables are never held in memory whole.
 
+        With `row_dicts`, the given rows take the place of the tables, and the call does
+        not read either label. The errors below that come from reading a label or a table
+        are then never raised: neither label need exist, the index need not be Voyager
+        ISS, and `pds3_options` is not checked. What is still checked is `select`, the
+        name of `filepath` when `supplement` is the default, `filter` against the first
+        row, and each row when the iteration reaches it.
+
         Parameters:
             filepath (str | pathlib.Path | FCPath): The path to the PDS label of a VGISS
                 raw image index, such as "VGISS_6109_raw_image_index.lbl", which has one
@@ -976,10 +983,10 @@ class VoyagerISS(oops.Host):
             row_dicts (collections.abc.Iterable[dict[str, Any]], optional): The rows of
                 the index already merged with the supplement, one dictionary per row, or
                 some of those rows. If they are given, they are used as they are, in place
-                of reading the tables, and each is filtered and built when the iteration
-                reaches it. A row read from the index without the supplement lacks
-                STOP_TIME and the clock partition, so its time is the index's
-                IMAGE_TIME, to the second.
+                of reading the tables and their labels, and each is filtered and built
+                when the iteration reaches it. A row read from the index without the
+                supplement lacks STOP_TIME and the clock partition, so its time is the
+                index's IMAGE_TIME, to the second.
             pds3_options (dict[str, Any], optional): Any keyword arguments and their
                 values to be passed to the :class:`~pdsparser.Pds3Label` parser.
             filter (dict[str, Any], optional): A dictionary of index column names and
@@ -1117,9 +1124,10 @@ class VoyagerISS(oops.Host):
 
         # The rows are read, paired by position with the supplement's, and filtered as
         # the iteration proceeds; the call reads only the labels, and the first row only
-        # if the index label lacks DATA_SET_ID. Given rows are used as they are, so the
-        # index label is needed only to read the tables. The name of the index is checked
-        # either way.
+        # if the index label lacks DATA_SET_ID. Given rows are used as they are:
+        # _index_rows() returns them before it reads either label, so the label checks
+        # are not made. With the default supplement, the name of the index is still
+        # checked, below.
         if row_dicts is None:
             label = VoyagerISS._index_label(filepath, label, pds3_options)
         rows = VoyagerISS._index_rows(filepath, supplement=supplement, label=label,

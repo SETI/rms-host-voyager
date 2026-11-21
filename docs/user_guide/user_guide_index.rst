@@ -8,8 +8,9 @@ index tables and leaves the images unopened, which makes it much faster than ope
 volume's images one at a time.
 
 It returns an iterator, which gives the Snapshots row by row, in the order of the index.
-The call itself checks the arguments and reads the PDS3 labels of the index and its
-supplement, so a wrong argument or a label that cannot be read raises an error at once.
+Unless the rows are given in ``row_dicts``, described below, the call itself checks the
+arguments and reads the PDS3 labels of the index and its supplement, so a wrong argument
+or a label that cannot be read raises an error at once.
 The iteration then reads the rows of the two tables a few at a time and builds each
 row's Snapshot when it reaches that row. Only those few rows of the tables are held in
 memory, however long the index. The whole process stays the same size from the first
@@ -81,10 +82,13 @@ Other arguments
 ``row_dicts``
     The rows themselves, one dictionary per row, already merged with the supplement, if
     the tables have already been read. Any iterable works, a generator included. The
-    rows are used as they are, and the tables are not read. Each row is filtered and
-    built when the iteration reaches it. A row read from the index alone has no
-    ``STOP_TIME`` and no clock partition, so its time is the index's ``IMAGE_TIME``,
-    which is to the second.
+    rows are used as they are, and neither the tables nor their labels are read, so the
+    checks that need a label are skipped: the labels need not exist, the index is not
+    checked to be a Voyager ISS index, and ``pds3_options`` is not checked. The name of
+    the index is still checked when ``supplement`` is left at its default, and ``filter``
+    is checked against the first row. Each row is filtered and built when the iteration
+    reaches it. A row read from the index alone lacks ``STOP_TIME`` and the clock
+    partition, so its time is the index's ``IMAGE_TIME``, which is to the second.
 
 ``filter``
     A dictionary of column names and the values to keep. A row is kept when each column

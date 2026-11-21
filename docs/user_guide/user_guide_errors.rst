@@ -54,7 +54,12 @@ Reading an image file
 Reading a PDS3 index
 ====================
 
-:meth:`~host_voyager.oops.iss.VoyagerISS.from_index` raises:
+:meth:`~host_voyager.oops.iss.VoyagerISS.from_index` raises the errors listed below.
+When the rows are given in ``row_dicts``, the call reads neither the tables nor their
+labels, so the errors that come from reading a label or a table are never raised: the
+labels need not exist or be readable, the index is not checked to be a Voyager ISS
+index, and ``pds3_options`` is not checked. The checks of ``select``, ``supplement``,
+and ``filter`` are still made, as their entries say, and so are those of each row.
 
 :exc:`~oops.host.HostIndexError`
     When the call is made, any of these:
@@ -78,9 +83,6 @@ Reading a PDS3 index
 
     After the last row: the supplement has more rows than the index, or a table holds
     more rows than its label says.
-
-    The errors during and after the iteration come from reading the tables, so they are
-    never raised when ``row_dicts`` is given.
 
     The tables are checked only for these errors. A value that cannot be read as the
     number its column describes gives a warning, and the row keeps the value as text.
