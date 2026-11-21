@@ -44,9 +44,14 @@ by up to 7,625 s for C4201035. For C3450201, ``STOP_TIME`` is
 later.
 
 An image has at most one record in the C kernel, stamped at its own clock stop count.
-A record looked up by time near ``STOP_TIME`` is therefore the record of another image
-whenever the two disagree: in the first 30 rows of the VGISS_6109 raw image index, this
-is so for 19 images.
+A lookup by time near ``STOP_TIME`` returns the record nearest that time within the
+lookup's tolerance. Where the count and ``STOP_TIME`` disagree, that is often the record
+of another image, sometimes no record at all, and the image's own only when no other
+record lies nearer. In the first 30 rows of the VGISS_6109 raw image index, each image's
+count falls 768 s or more after its ``STOP_TIME``. A lookup at ``STOP_TIME`` with a
+tolerance of one FDS hour returns another image's record for 28 of them and the image's
+own for 2. With a tolerance of one FDS minute, it returns another image's record for 10
+and none for the other 20.
 
 Evidence
 ========
@@ -104,6 +109,6 @@ Consequences
 ============
 
 A lookup of the C kernel by time, whether a call to ``ckgp`` at mid-exposure or a frame
-such as a :class:`~oops.frame.SpiceType1Frame`, gives a neighboring image's pointing
-whenever the count and ``STOP_TIME`` disagree. Geometry computed that way for those
-images is wrong.
+such as a :class:`~oops.frame.SpiceType1Frame`, gives a neighboring image's pointing, or
+none, for many of the images whose count and ``STOP_TIME`` disagree. Geometry computed
+from a neighboring image's pointing is wrong.

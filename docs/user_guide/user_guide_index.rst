@@ -43,8 +43,10 @@ into the matching row of the index; where both tables give a column, the index's
 is kept.
 
 The metadata index of every product, ``VGISS_6109_index.lbl``, which has a row for each
-product of each image, is not accepted. It raises :exc:`~oops.host.HostIndexError` when
-the call is made, also when ``row_dicts`` is given.
+product of each image, is not accepted. With the default supplement, it raises
+:exc:`~oops.host.HostIndexError` when the call is made, also when ``row_dicts`` is
+given. With a supplement path, the iteration raises :exc:`~oops.host.HostIndexError` at
+the first row, whose file differs from the supplement's.
 
 The ``supplement`` argument chooses the supplemental index:
 
@@ -52,7 +54,8 @@ The ``supplement`` argument chooses the supplemental index:
   ``_supplemental_index`` in place of ``_raw_image_index``, in upper or lower case. That
   file must exist.
 - A path or URL reads that file instead.
-- None raises :exc:`~oops.host.HostIndexError`, unless ``row_dicts`` is given.
+- None or an empty string raises :exc:`~oops.host.HostIndexError`, unless ``row_dicts``
+  is given.
 
 Every VGISS supplement lists the same images as its index, in the same order, so the
 host reads the two tables in step and merges each index row with the supplement row in

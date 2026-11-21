@@ -1278,14 +1278,16 @@ def test_from_file_label_reads_an_image_with_a_garbled_header(
 def test_from_file_image_with_a_garbled_time_takes_it_from_the_clock(
         tmp_path: pathlib.Path) -> None:
     """The time of an image file whose SCET is unknown comes from its FDS count, in the
-    clock partition nearest the earth received time of LAB04."""
+    clock partition nearest the earth received time of LAB04. This ERT is one clock cycle
+    after the real one, in 1986, so it selects partition 3, while the imaging periods
+    would select partition 2."""
 
     lab02 = _LAB02.replace('SCET 80.303 05:57:22', 'SCET **.*** **:**:**')
-    image = _write_vicar(tmp_path, lab02=lab02)
+    lab04 = _LAB04.replace('ERT 80.303 07:35:06', 'ERT 86.295 20:23:02')
+    image = _write_vicar(tmp_path, lab02=lab02, lab04=lab04)
     obs = VoyagerISS.from_file(image)
-    assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=1.e-6)
+    assert obs.time[1] == pytest.approx(tdb(STOP_TIME) + _CYCLE, abs=1.e-6)
     assert obs.time_from_sclk is True
-    assert obs.planet == 'SATURN'
     assert 'STOP_TIME' not in obs.dict
 
 
@@ -2233,6 +2235,14 @@ def test_from_index_refuses_no_supplement() -> None:
                        match=r'Voyager ISS raw image index needs its supplemental index: '
                              r'.*VGISS_6109_raw_image_index_edited\.lbl'):
         VoyagerISS.from_index(INDEX, supplement=None)
+
+
+def test_from_index_refuses_an_empty_supplement() -> None:
+    """oops reads the index alone for an empty path, so the host refuses it as None."""
+
+    with pytest.raises(oops.host.HostIndexError,
+                       match=r'Voyager ISS raw image index needs its supplemental index: '):
+        VoyagerISS.from_index(INDEX, supplement='')
 
 
 def test_from_index_given_rows_need_no_supplement() -> None:

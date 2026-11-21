@@ -62,7 +62,7 @@ Reading a PDS3 index
     - ``supplement`` is left at its default, and the index's file name lacks the
       ``_raw_image_index`` from which the host finds the supplement. This is checked
       when ``row_dicts`` is given too.
-    - ``supplement`` is None and ``row_dicts`` is not given.
+    - ``supplement`` is None or an empty string, and ``row_dicts`` is not given.
     - A table cannot be read as an index, because its label lacks the table it points
       to.
 

@@ -73,15 +73,17 @@ class VoyagerISS(Host):
     # so the rows of the two tables are paired by position.
     MERGE_SUPPLEMENT_BY_FILE: bool
     # Every row is one Snapshot. A raw image index of the Ring-Moon Systems Node metadata
-    # is read with its supplement; an index whose name lacks "_raw_image_index" raises
-    # oops.host.HostIndexError when the call is made. The supplement is required: None
-    # raises oops.host.HostIndexError unless row_dicts is given. select must be None
-    # (oops.OopsValueError). The call reads only the labels; the iterator reads the rows
-    # of the index and its supplement a few at a time, in step, and builds each row's
-    # Snapshot when it reaches the row. A row whose files differ between the two tables
-    # raises oops.host.HostIndexError at that row. A Snapshot never has an abspath,
-    # because the image files are not retrieved. Host takes **kwargs here too, and the
-    # runtime does not, so that Python refuses a keyword not listed with TypeError.
+    # is read with its supplement. With the default supplement, Host.SUPPLEMENT, an index
+    # whose name lacks "_raw_image_index" raises oops.host.HostIndexError when the call is
+    # made; a supplement path is used whatever the index's name. The supplement is
+    # required: None or "" raises oops.host.HostIndexError unless row_dicts is given.
+    # select must be None (oops.OopsValueError). The call reads only the labels; the
+    # iterator reads the rows of the index and its supplement a few at a time, in step,
+    # and builds each row's Snapshot when it reaches the row. A row whose files differ
+    # between the two tables raises oops.host.HostIndexError at that row. A Snapshot
+    # never has an abspath, because the image files are not retrieved. Host takes
+    # **kwargs here too, and the runtime does not, so that Python refuses a keyword not
+    # listed with TypeError.
     @staticmethod
     def from_index(  # type: ignore[override]
         filepath: str | pathlib.Path | FCPath, *,

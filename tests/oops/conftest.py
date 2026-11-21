@@ -92,9 +92,16 @@ def rotation(axis: int, angle: float) -> np.ndarray:
 
 
 def record_matrix(ticks: float) -> np.ndarray:
-    """The fake C-kernel record at `ticks`, a rotation unique to each count."""
+    """The fake C-kernel record at `ticks`, a rotation unique to each count and partition.
 
-    return rotation(2, (ticks % 1_000_000) * 1.e-6)
+    One count in two partitions differs by a multiple of PARTITION_TICKS, which the
+    rotation about the third axis ignores, so the partition also turns the second axis.
+    """
+
+    (partition, within) = divmod(ticks, PARTITION_TICKS)
+    matrix: np.ndarray = (rotation(1, partition * 0.01)
+                          @ rotation(2, (within % 1_000_000) * 1.e-6))
+    return matrix
 
 
 def camera_matrix(count: str, partition: int = 2) -> np.ndarray:

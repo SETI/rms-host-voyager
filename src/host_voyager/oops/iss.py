@@ -1080,11 +1080,12 @@ class VoyagerISS(oops.Host):
                 row.
             FileNotFoundError: If the supplement's label does not exist, when the call is
                 made; if a table file does not exist, when the iteration starts.
-            oops.host.HostIndexError: When the call is made: if `supplement` is None
-                while `row_dicts` is not given; if `supplement` is `oops.Host.SUPPLEMENT`
-                and the name of `filepath` lacks "_raw_image_index", also when
-                `row_dicts` is given; or if a label does not describe a table that can
-                be read, as when it lacks the table it points to. During the iteration,
+            oops.host.HostIndexError: When the call is made: if `supplement` is None or
+                an empty string while `row_dicts` is not given; if `supplement` is
+                `oops.Host.SUPPLEMENT` and the name of `filepath` lacks
+                "_raw_image_index", also when `row_dicts` is given; or if a label does
+                not describe a table that can be read, as when it lacks the table it
+                points to. During the iteration,
                 counting rows from 0: at a row where the index row and the supplement row
                 in the same position give different files; at the row where the
                 supplement ends before the index; after the last row a table holds, if it
@@ -1101,10 +1102,12 @@ class VoyagerISS(oops.Host):
 
         oops.Host._check_select(select, unit='row of a Voyager ISS raw image index')
 
-        # The supplement is required, so None is refused rather than taken to mean "read
-        # the index alone"
+        # The supplement is required, so None and the empty string, which oops takes to
+        # mean "read the index alone", are refused
         filepath = FCPath(filepath)
-        if supplement is None and row_dicts is None:
+        no_supplement = supplement is None or (isinstance(supplement, str)
+                                               and not supplement)
+        if no_supplement and row_dicts is None:
             raise oops.host.HostIndexError(f'Voyager ISS raw image index needs its '
                                            f'supplemental index: {filepath}')
 

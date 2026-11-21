@@ -94,8 +94,10 @@ apply here to the stubs described below.
   record per image, stamped at the image's `SPACECRAFT_CLOCK_STOP_COUNT` (its FDS image
   number, `hhhhh:mm:001`), which is often whole FDS minutes (48 s each; 768.7 s for
   C3450201) after the true shutter close, `STOP_TIME`. A time lookup near `STOP_TIME`,
-  whether `ckgp` at mid-exposure as in the rms-oops host or a `SpiceType1Frame`, returns a
-  neighboring image's record. `docs/user_guide/user_guide_appendix_pointing.rst` gives
+  whether `ckgp` at mid-exposure as in the rms-oops host or a `SpiceType1Frame`, returns
+  the record nearest that time within its tolerance: often a neighboring image's, at
+  times none, and the image's own only when no other record is nearer.
+  `docs/user_guide/user_guide_appendix_pointing.rst` gives
   the evidence: fits of real images show that the record at the image's own count holds
   its pointing, and that `STOP_TIME`, not the count, is the shutter time.
 - So the time is `STOP_TIME`, else `IMAGE_TIME`. Only when no source read gives either
@@ -159,8 +161,11 @@ apply here to the stubs described below.
   would look for `..._raw_image_supplemental_index`, so the host overrides
   `_supplement_path()` to replace `_raw_image_index` with `_supplemental_index`, and to
   raise `HostIndexError` for an index whose name lacks it; `from_index()` calls it with
-  `row_dicts` too, so the full index is refused either way. The supplement is required:
-  `supplement=None` raises `HostIndexError` unless `row_dicts` is given. `select` other
+  `row_dicts` too, so with the default supplement the full index is refused when the call
+  is made, with or without `row_dicts`. Given a supplement path, the name is not checked, and the full
+  index raises `HostIndexError` at row 0, whose file differs from the supplement's. The
+  supplement is required: `supplement=None` or `''` (which oops would take to mean "read
+  the index alone") raises `HostIndexError` unless `row_dicts` is given. `select` other
   than None raises `OopsValueError`, through `oops.Host._check_select()`; an unknown
   keyword raises Python's own `TypeError`, since neither method takes `**kwargs`.
   Every index label gives
@@ -266,8 +271,10 @@ apply here to the stubs described below.
   `dict`.
 - `filepath`, `basename`, `abspath` and `image_url` name the image file on every input.
   They are absent for parsed content without a file path (a `Pds3Label` made from text, a
-  `VicarImage` made from an array), and a full read of such content raises
-  `HostFormatError` ("no file path is known"). `abspath` is given only by a read that
+  `VicarImage` made from an array). A full read of a `Pds3Label` or `VicarLabel` without
+  a path raises `HostFormatError` ("no file path is known"), since it cannot find the
+  image file; a `VicarImage` holds its array, which a full read takes from
+  `image.data_2d`. `abspath` is given only by a read that
   retrieved the image file in this call to read its data (operator, 2026-11-20: a file
   that exists remotely need not exist locally until it is retrieved): the path that
   `FCPath.retrieve()` returns, passed to `oops.Host._apply_overrides(abspath=...)`.
