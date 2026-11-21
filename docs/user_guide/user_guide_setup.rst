@@ -68,8 +68,8 @@ Initialization
 
 The first call to :meth:`~host_voyager.oops.iss.VoyagerISS.from_file` or
 :meth:`~host_voyager.oops.iss.VoyagerISS.from_index` loads the kernels and defines the
-cameras' fields of view. To choose the bodies that OOPS defines, or to use only the
-kernels that existed before a given date, call
+cameras' fields of view. To choose the bodies that OOPS defines, or to prefer the
+kernels released by a given date, call
 :meth:`~host_voyager.oops.iss.VoyagerISS.initialize` before opening the first image.
 Its ``planets`` argument is one planet number, from 1 for Mercury to 9 for Pluto, or a
 sequence of them. This call defines only Saturn, planet 6, and its moons:
@@ -79,6 +79,17 @@ sequence of them. This call defines only Saturn, planet 6, and its moons:
    from host_voyager import VoyagerISS
 
    VoyagerISS.initialize(planets=(6,))
+
+Its ``asof`` argument takes a date, such as ``'1995-01-01'``, and each kernel is then
+chosen from those released on or before that date where possible. Where the kernel
+database does not hold a kernel of some kind that old, a later one is used, the one that
+would be chosen without a date, and no warning is given. For example,
+``asof='1995-01-01'`` still loads the leap seconds kernel released in 2016, because the
+database does not hold an earlier one. The C kernels are the exception: if none was
+released by the date, as for any date before 1990-04-16,
+:meth:`~host_voyager.oops.iss.VoyagerISS.initialize` raises :exc:`ValueError`. The
+merged cruise trajectories of the two spacecraft, released on 2013-01-25, are left out
+for an earlier date, and no other kernel takes their place.
 
 Later calls to :meth:`~host_voyager.oops.iss.VoyagerISS.initialize` have no effect.
 
