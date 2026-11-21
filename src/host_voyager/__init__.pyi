@@ -34,26 +34,27 @@ from oops.path import Path
 __all__ = ['VoyagerISS']
 
 class VoyagerISS(Host):
-    # The runtime names the first parameter `fileinfo`, where Host names it `filepath`.
-    # Without a `frame`, an image whose pointing the SPICE kernels cannot supply raises
-    # oops.OopsSpiceError, "no Voyager 1 ISS NAC pointing at <time> for <image file>:
-    # SPICE(CKINSUFFDATA)", whose cause is the SPICE exception. The time is that at which
-    # the Snapshot evaluates its frame: the midtime after any cadence override, moved by
-    # any timeshift, once for "T" and once more for "F". An image for which no source
-    # read gives a time takes it from its clock count (time_from_sclk), and raises
-    # oops.OopsSpiceError if the clock kernel cannot convert the count. An image for
-    # which no source read gives the exposure, camera, spacecraft, a time or a clock
-    # count, or, unless `frame` is given, a clock stop count, raises
-    # oops.host.HostFormatError; a label that no parser method reads, or that lacks an
-    # IMAGE pointer, raises oops.host.PdsHostError; a VICAR file that cannot be read as an
-    # image raises oops.host.VicarHostError; another mission's file or parsed content
-    # raises oops.host.WrongHostError. select must be None (oops.OopsValueError), and
-    # any other keyword raises oops.OopsTypeError. Given the image file, only it is
-    # read; given a PDS3 label, the label and its image file are read and their metadata
-    # merged, except that with astrometry=True the label is read alone and the image
-    # file need not exist. A subfield that no source read gives, such as if_scale, is
-    # absent. The `spacecraft` subfield, the int 1 or 2, tells Voyager 1 from Voyager 2
-    # on every input.
+    # The runtime names the first parameter `fileinfo`, where Host names it `filepath`,
+    # and does not take **kwargs, where Host does, so that Python refuses a keyword not
+    # listed with TypeError. Without a `frame`, an image whose pointing the SPICE kernels
+    # cannot supply raises oops.OopsSpiceError, "no Voyager 1 ISS NAC pointing at <time>
+    # for <image file>: SPICE(CKINSUFFDATA)", whose cause is the SPICE exception. The
+    # time is that at which the Snapshot evaluates its frame: the midtime after any
+    # cadence override, moved by any timeshift, once for "T" and once more for "F". An
+    # image for which no source read gives a time takes it from its clock count
+    # (time_from_sclk), and raises oops.OopsSpiceError if the clock kernel cannot convert
+    # the count. An image for which no source read gives the exposure, camera,
+    # spacecraft, a time or a clock count, or, unless `frame` is given, a clock stop
+    # count, raises oops.host.HostFormatError; a label that no parser method reads, or
+    # that lacks an IMAGE pointer, raises oops.host.PdsHostError; a VICAR file that cannot
+    # be read as an image raises oops.host.VicarHostError; another mission's file or
+    # parsed content raises oops.host.WrongHostError. select must be None
+    # (oops.OopsValueError). Given the image file, only it is read; given a PDS3 label,
+    # the label and its image file are read and their metadata merged, except that with
+    # astrometry=True the label is read alone and the image file need not exist. A
+    # subfield that no source read gives, such as if_scale, is absent; abspath is present
+    # only when this call retrieved the image file to read its data. The `spacecraft`
+    # subfield, the int 1 or 2, tells Voyager 1 from Voyager 2 on every input.
     @staticmethod
     def from_file(  # type: ignore[override]
         fileinfo: str | pathlib.Path | FCPath | Pds3Label | VicarLabel
@@ -67,7 +68,7 @@ class VoyagerISS(Host):
         calibrations: Calibration | list[Calibration] | None = None,
         timeshift: tuple[float, str] | None = None,
         navigation: tuple[float, ...] | None = None, tracker: str | None = None,
-        parallel: Observation | None = None, **kwargs: Any) -> Snapshot: ...
+        parallel: Observation | None = None) -> Snapshot: ...
     # Every VGISS supplement lists the images of its raw image index in the same order,
     # so the rows of the two tables are paired by position.
     MERGE_SUPPLEMENT_BY_FILE: bool
@@ -75,13 +76,14 @@ class VoyagerISS(Host):
     # is read with its supplement; an index whose name lacks "_raw_image_index" raises
     # oops.host.HostIndexError when the call is made. The supplement is required: None
     # raises oops.host.HostIndexError unless row_dicts is given. select must be None
-    # (oops.OopsValueError), and any other keyword raises oops.OopsTypeError. The call
-    # reads only the labels; the iterator reads the rows of the index and its supplement
-    # a few at a time, in step, and builds each row's Snapshot when it reaches the row. A
-    # row whose files differ between the two tables raises oops.host.HostIndexError at
-    # that row.
+    # (oops.OopsValueError). The call reads only the labels; the iterator reads the rows
+    # of the index and its supplement a few at a time, in step, and builds each row's
+    # Snapshot when it reaches the row. A row whose files differ between the two tables
+    # raises oops.host.HostIndexError at that row. A Snapshot never has an abspath,
+    # because the image files are not retrieved. Host takes **kwargs here too, and the
+    # runtime does not, so that Python refuses a keyword not listed with TypeError.
     @staticmethod
-    def from_index(
+    def from_index(  # type: ignore[override]
         filepath: str | pathlib.Path | FCPath, *,
         supplement: str | pathlib.Path | FCPath | object | None = ...,
         label: Pds3Label | None = None,
@@ -95,7 +97,7 @@ class VoyagerISS(Host):
         calibrations: Calibration | list[Calibration] | None = None,
         timeshift: tuple[float, str] | None = None,
         navigation: tuple[float, ...] | None = None, tracker: str | None = None,
-        parallel: Observation | None = None, **kwargs: Any) -> Iterator[Snapshot]: ...
+        parallel: Observation | None = None) -> Iterator[Snapshot]: ...
     @staticmethod
     def initialize(*, planets: int | Sequence[int] | None = None,
         asof: str | None = None, irregulars: bool = True) -> None: ...

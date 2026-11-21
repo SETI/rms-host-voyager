@@ -945,7 +945,6 @@ def test_from_file_label_names_the_image_file(label: pathlib.Path) -> None:
     image = label.with_suffix('.IMG')
     assert obs.basename == image.name
     assert obs.filepath.name == image.name
-    assert obs.abspath == image.resolve()
     assert obs.image_url.endswith(f'/test_files/{image.name}')
 
 
@@ -1346,36 +1345,32 @@ def _put_in_cache(file_cache: FileCache, url: str) -> pathlib.Path:
     return local
 
 
-def test_from_file_remote_label_for_astrometry_has_no_abspath(
+def test_from_file_remote_label_for_astrometry_names_the_image_url(
         file_cache: FileCache) -> None:
-    """A remote label read alone does not retrieve its image file, so no local path
-    names it."""
-
     obs = VoyagerISS.from_file(_remote_label(file_cache), astrometry=True)
-    assert not hasattr(obs, 'abspath')
     assert obs.image_url == _REMOTE_VOLUME + GEOMED_VICAR.name
 
 
-def test_from_file_remote_label_for_astrometry_has_an_abspath_when_cached(
-        file_cache: FileCache) -> None:
-    local = _put_in_cache(file_cache, _REMOTE_VOLUME + GEOMED_VICAR.name)
-    obs = VoyagerISS.from_file(_remote_label(file_cache), astrometry=True)
-    assert obs.abspath == local.resolve()
+def test_from_file_label_for_astrometry_lacks_an_abspath() -> None:
+    """Only a read that retrieves the image file gives its local path, even when the
+    file is beside the label."""
 
-
-def test_from_file_local_label_for_astrometry_has_an_abspath() -> None:
     obs = VoyagerISS.from_file(GEOMED_LABEL, astrometry=True)
-    assert obs.abspath == GEOMED_VICAR.resolve()
+    assert not hasattr(obs, 'abspath')
+
+
+def test_from_file_label_read_in_full_has_the_image_abspath(
+        tmp_path: pathlib.Path) -> None:
+    (label, image) = _write_label_and_image(tmp_path)
+    obs = VoyagerISS.from_file(label)
+    assert obs.abspath == image.resolve()
 
 
 def test_from_file_local_label_for_astrometry_without_its_image_file(
         tmp_path: pathlib.Path) -> None:
-    """No abspath names a file that does not exist."""
-
     label = tmp_path / GEOMED_LABEL.name
     shutil.copy(GEOMED_LABEL, label)
     obs = VoyagerISS.from_file(label, astrometry=True)
-    assert not hasattr(obs, 'abspath')
     assert obs.filepath == FCPath(tmp_path / GEOMED_VICAR.name)
 
 
@@ -1572,10 +1567,32 @@ def test_from_file_vicar_header() -> None:
     assert frame_matrix(obs) == pytest.approx(camera_matrix(CLOCK_COUNT))
 
 
-def test_from_file_sets_local_paths() -> None:
+def test_from_file_sets_local_paths(tmp_path: pathlib.Path) -> None:
+    image = _write_vicar(tmp_path)
+    obs = VoyagerISS.from_file(image)
+    assert obs.abspath == image.resolve()
+    assert obs.image_url == FCPath(image).absolute().as_posix()
+
+
+def test_from_file_image_for_astrometry_lacks_an_abspath() -> None:
     obs = VoyagerISS.from_file(GEOMED_VICAR, astrometry=True)
-    assert obs.abspath == GEOMED_VICAR.resolve()
-    assert obs.image_url.endswith('/test_files/C3450201_GEOMED_edited.IMG')
+    assert not hasattr(obs, 'abspath')
+
+
+def test_from_file_remote_image_has_the_abspath_of_its_retrieved_copy(
+        file_cache: FileCache, tmp_path: pathlib.Path) -> None:
+    url = _REMOTE_VOLUME + 'C3450201.IMG'
+    local = _put_in_cache(file_cache, url)
+    local.write_bytes(_write_vicar(tmp_path).read_bytes())
+    obs = VoyagerISS.from_file(FCPath(url, filecache=file_cache))
+    assert obs.abspath == local.resolve()
+
+
+def test_from_file_given_vicar_image_lacks_an_abspath(tmp_path: pathlib.Path) -> None:
+    """The caller read the image file, so this call did not retrieve it."""
+
+    obs = VoyagerISS.from_file(vicar.VicarImage(_write_vicar(tmp_path)))
+    assert not hasattr(obs, 'abspath')
 
 
 def test_from_file_vicar_if_scale_from_its_header() -> None:
@@ -1797,9 +1814,7 @@ def test_from_file_rejects_other_hosts(tmp_path: pathlib.Path) -> None:
 
 
 def test_from_file_rejects_an_unknown_keyword() -> None:
-    with pytest.raises(oops.OopsTypeError,
-                       match=r"unexpected keyword argument for VoyagerISS\.from_file: "
-                             r"'astrometric'"):
+    with pytest.raises(TypeError, match="unexpected keyword argument 'astrometric'"):
         VoyagerISS.from_file(RAW_LABEL, astrometric=True)
 
 
@@ -1960,13 +1975,21 @@ def test_from_index_names_the_image_file_beside_the_index(tmp_path: pathlib.Path
     """An index outside the holdings layout has its volume directory beside it."""
 
     image = tmp_path / 'VGISS_6109' / _ROW9_IMAGE
-    image.parent.mkdir(parents=True)
-    image.write_bytes(b'')
     obs = list(VoyagerISS.from_index(_copy_index(tmp_path)))[9]
     assert obs.filepath == FCPath(image)
     assert obs.basename == 'C3450201_RAW.IMG'
-    assert obs.abspath == image.resolve()
     assert obs.image_url == FCPath(image).absolute().as_posix()
+
+
+def test_from_index_local_image_file_lacks_an_abspath(tmp_path: pathlib.Path) -> None:
+    """Reading an index does not retrieve the image files, so a Snapshot never has a
+    local path, even for a file that exists."""
+
+    image = tmp_path / 'VGISS_6109' / _ROW9_IMAGE
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b'')
+    obs = list(VoyagerISS.from_index(_copy_index(tmp_path)))[9]
+    assert not hasattr(obs, 'abspath')
 
 
 def test_from_index_names_the_image_file_in_the_volumes_tree(
@@ -1980,15 +2003,13 @@ def test_from_index_names_the_image_file_in_the_volumes_tree(
 @pytest.mark.parametrize('layout', ['beside', 'holdings'])
 def test_from_index_without_the_volume_creates_nothing(tmp_path: pathlib.Path,
                                                        layout: str) -> None:
-    """With no volume where the index places it, no Snapshot has an abspath and no
-    directory is created."""
+    """With no volume where the index places it, no directory is created."""
 
     index = (_copy_index(tmp_path) if layout == 'beside'
              else _holdings_index(tmp_path))
     before = sorted(tmp_path.rglob('*'))
-    snapshots = list(VoyagerISS.from_index(index))
+    list(VoyagerISS.from_index(index))
     assert sorted(tmp_path.rglob('*')) == before
-    assert [obs for obs in snapshots if hasattr(obs, 'abspath')] == []
 
 
 def _remote_index(file_cache: FileCache) -> FCPath:
@@ -2002,21 +2023,11 @@ def _remote_index(file_cache: FileCache) -> FCPath:
 _ROW9_URL = 'https://pds-rings.seti.org/holdings/volumes/VGISS_6xxx/VGISS_6109/' + _ROW9_IMAGE
 
 
-def test_from_index_remote_image_file_has_a_url_and_no_abspath(
-        file_cache: FileCache) -> None:
+def test_from_index_remote_image_file_has_a_url(file_cache: FileCache) -> None:
     obs = list(VoyagerISS.from_index(_remote_index(file_cache),
                                      row_dicts=_merged_rows()))[9]
     assert obs.image_url == _ROW9_URL
     assert str(obs.filepath) == _ROW9_URL
-    assert not hasattr(obs, 'abspath')
-
-
-def test_from_index_remote_image_file_has_an_abspath_when_cached(
-        file_cache: FileCache) -> None:
-    local = _put_in_cache(file_cache, _ROW9_URL)
-    obs = list(VoyagerISS.from_index(_remote_index(file_cache),
-                                     row_dicts=_merged_rows()))[9]
-    assert obs.abspath == local.resolve()
 
 
 def test_from_index_consumer_subfields() -> None:
@@ -2247,9 +2258,7 @@ def test_from_index_uses_a_given_label(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_from_index_rejects_an_unknown_keyword() -> None:
-    with pytest.raises(oops.OopsTypeError,
-                       match=r"unexpected keyword argument for VoyagerISS\.from_index: "
-                             r"'supplementary'"):
+    with pytest.raises(TypeError, match="unexpected keyword argument 'supplementary'"):
         VoyagerISS.from_index(INDEX, supplementary=None)
 
 

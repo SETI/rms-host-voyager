@@ -39,8 +39,9 @@ Reading an image file
 :exc:`~oops.host.WrongHostError`
     The file, or the parsed label or image passed in, is not of a Voyager ISS image.
 
-:exc:`~oops.OopsTypeError`
-    A keyword argument is not one that the method accepts.
+:exc:`TypeError`
+    A keyword argument is not one that the method accepts. This is Python's own error
+    for an unexpected keyword argument.
 
 :exc:`~oops.OopsValueError`
     ``select`` is not None, or ``pds3_options`` holds an option that the parser does not
@@ -72,8 +73,8 @@ Reading a PDS3 index
     - At the row where the supplement ends before the index.
     - After the last row of a table that holds fewer rows than its label says. Every
       row that the table holds is given first.
-    - At a row that is longer than its label says. The rows are read ten at a time, and
-      none of the ten read with that row is given.
+    - At a row that is longer than its label says. The rows are read 100 at a time, and
+      none of the 100 read with that row is given.
 
     After the last row: the supplement has more rows than the index, or a table holds
     more rows than its label says.
@@ -100,9 +101,13 @@ Reading a PDS3 index
     A row lacks a time, and the clock kernel cannot convert its clock count. This error
     is raised when the iteration reaches that row.
 
+:exc:`TypeError`
+    A keyword argument is not one that the method accepts, as Python reports an
+    unexpected keyword argument.
+
 :exc:`~oops.OopsTypeError`
-    A keyword argument is not one that the method accepts; or, when the iteration
-    reaches a row, a range in ``filter`` cannot be compared with that row's value.
+    When the iteration reaches a row, a range in ``filter`` cannot be compared with that
+    row's value.
 
 :exc:`~oops.OopsValueError`
     ``select`` is not None, ``filter`` gives a column that neither table has, or

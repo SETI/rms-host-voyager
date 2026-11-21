@@ -11,8 +11,11 @@ It returns an iterator, which gives the Snapshots row by row, in the order of th
 The call itself checks the arguments and reads the PDS3 labels of the index and its
 supplement, so a wrong argument or a label that cannot be read raises an error at once.
 The iteration then reads the rows of the two tables a few at a time and builds each
-row's Snapshot when it reaches that row. Only those few rows are held in memory, however
-long the index. An error in a row is raised when the iteration reaches it, after the
+row's Snapshot when it reaches that row. Only those few rows of the tables are held in
+memory, however long the index. The whole process stays the same size from the first
+row to the last only with the change to OOPS that frees each Snapshot's camera frame
+with the Snapshot (SETI/rms-oops pull request 252); without it, each Snapshot leaves a
+few kilobytes behind. An error in a row is raised when the iteration reaches it, after the
 rows before it. To build every row at once, pass the iterator to ``list()``:
 
 .. code-block:: python
@@ -96,8 +99,8 @@ Other arguments
     The same as for :meth:`~host_voyager.oops.iss.VoyagerISS.from_file`, applied to every
     row.
 
-Any other keyword raises :exc:`~oops.OopsTypeError`, so that a misspelled argument is
-not silently ignored.
+Any other keyword raises Python's :exc:`TypeError` for an unexpected keyword argument,
+so that a misspelled argument is not silently ignored.
 
 What one row gives
 ==================
@@ -141,9 +144,9 @@ the location of the index:
 - For an index anywhere else, the volume is the directory beside the index that has the
   row's ``VOLUME_NAME``.
 
-``abspath`` is present only when the image file is on the local file system, or is a
-remote file that is already in the local cache. Reading an index never creates a
-directory, even when the volume is not where the index places it.
+A Snapshot read from an index never has ``abspath``, because reading an index does not
+retrieve the image files, even those on the local file system. Reading an index never
+creates a directory, even when the volume is not where the index places it.
 
 Reading an index through oops.Host
 ==================================

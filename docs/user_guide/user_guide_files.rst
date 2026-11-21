@@ -56,11 +56,12 @@ image file, also when the input is the label. After an astrometry read of a labe
 ``filepath``, ``basename``, and ``image_url`` give the file that the label points to,
 whether or not it exists.
 
-``abspath`` is the file's local path. It is present only when the image file is on the
-local file system or is a remote file that is already in the local cache, and it never
-gives a file that does not exist. An astrometry read of a remote label does not retrieve
-the image file, so ``abspath`` is then present only if an earlier read put the file in
-the cache. Reading an image never creates a directory.
+``abspath`` is the file's local path. It is present only when the read retrieved the
+image file to read its data: for a local file, its path, and for a remote file, the copy
+that the read put in the local cache. An astrometry read does not read the data, so it
+never gives ``abspath``, even when the image file is beside the label. A
+:class:`~vicar.VicarImage` passed in was read by the caller, so it never gives
+``abspath`` either. Reading an image never creates a directory.
 
 Parsed input
 ============
@@ -104,8 +105,9 @@ These options are particular to the Voyager host:
 The standard OOPS overrides, ``target``, ``lightsource``, ``path``, ``frame``,
 ``cadence``, ``fov``, ``calibrations``, ``timeshift``, ``navigation``, ``tracker``, and
 ``parallel``, replace what the host would otherwise build. They are listed with
-:meth:`~host_voyager.oops.iss.VoyagerISS.from_file`. Any other keyword raises
-:exc:`~oops.OopsTypeError`, so that a misspelled argument is not silently ignored.
+:meth:`~host_voyager.oops.iss.VoyagerISS.from_file`. Any other keyword raises Python's
+:exc:`TypeError` for an unexpected keyword argument, so that a misspelled argument is
+not silently ignored.
 
 Reading a label through oops.Host
 =================================

@@ -33,8 +33,9 @@ apply here to the stubs described below.
   `venv/` that the scripts expect; set `VENV` to use another.
 - The `oops.Host` API arrived in rms-oops 0.4.0, and `oops.OopsSpiceError` and the
   streaming index reader arrive in 0.5.0. Until 0.5.0 is released, `pyproject.toml`
-  installs the rms-oops branch `rf_261118_oops_spice_error`, whose pull request its
-  comment cites; it goes back to `rms-oops>=0.5.0` after that merges. rms-pdstable
+  installs the rms-oops branch `rf_261118_oops_spice_error` (SETI/rms-oops#242); it
+  goes back to `rms-oops>=0.5.0` after that merges. The frame and path memory fix,
+  SETI/rms-oops#252, is a separate change that CI does not install. rms-pdstable
   1.2.0 is the first that streams a table, and rms-filecache 3.0.0 the first through
   which rms-vicar reads images.
 - The type information is published in two stubs: `host_voyager/__init__.pyi` declares
@@ -42,9 +43,9 @@ apply here to the stubs described below.
   checks them against the runtime in the check script and in CI, so adding, renaming or
   re-signing a public member means updating `host_voyager/__init__.pyi` in the same
   change. The `[tool.mypy] exclude`, the override list in `pyproject.toml` and
-  `.stubtest-allowlist` keep it off the stub-less modules. The `type: ignore[override]`
-  comment is a real mismatch with `oops.Host`: `from_file` names its first parameter
-  `fileinfo`.
+  `.stubtest-allowlist` keep it off the stub-less modules. The two
+  `type: ignore[override]` comments are real mismatches with `oops.Host`: `from_file`
+  names its first parameter `fileinfo`, and neither method takes `**kwargs`.
 - `docs/conf.py` resolves the short class names in docstrings (`FCPath`, `Observation`,
   ...) through intersphinx with `_SHORT_NAMES`. Add a name there when a nitpicky build
   reports a class from another RMS package.
@@ -160,8 +161,9 @@ apply here to the stubs described below.
   raise `HostIndexError` for an index whose name lacks it; `from_index()` calls it with
   `row_dicts` too, so the full index is refused either way. The supplement is required:
   `supplement=None` raises `HostIndexError` unless `row_dicts` is given. `select` other
-  than None raises `OopsValueError` and any unknown keyword `OopsTypeError`, through
-  `oops.Host._check_select()` and `_check_keywords()`. Every index label gives
+  than None raises `OopsValueError`, through `oops.Host._check_select()`; an unknown
+  keyword raises Python's own `TypeError`, since neither method takes `**kwargs`.
+  Every index label gives
   `EXPOSURE_DURATION` `BYTES = 7` where the field and its `FORMAT` "F9.4" are 9 wide, so
   `_index_label()` widens a column to its FORMAT width where the label gives fewer bytes
   (1,597 of 76,652 rows lose digits otherwise, and the null -99.9999 reads -99.99). It is
@@ -181,7 +183,7 @@ apply here to the stubs described below.
   "VG1/VG2-S-ISS-2/3/4/6-PROCESSED-V1.0") and passes the call, every argument included,
   to `VoyagerISS.from_index()`. That reads nothing itself: `oops.Host._index_rows()`
   reads the labels at call time and streams the rows of both tables with
-  `PdsTable(defer_load=True).iter_dicts`, ten at a time, pairing them by position because
+  `PdsTable(defer_load=True).iter_dicts`, 100 at a time, pairing them by position because
   `MERGE_SUPPLEMENT_BY_FILE` is False. A survey of all 182 raw image indexes (the 91 in
   the metadata tree and their `_v1.0` copies) found every supplement equal in length and
   in agreement on `VOLUME_NAME`, `FILE_SPECIFICATION_NAME` and `PRODUCT_ID` row for row.
@@ -200,9 +202,10 @@ apply here to the stubs described below.
   gives it the name `PRODUCT_ID`. The volume is in `oops.Host._volumes_directory()` of
   the index, which maps
   `<holdings>/metadata/VGISS_6xxx/VGISS_6109/` to `<holdings>/volumes/VGISS_6xxx/` and
-  any other index to its own directory. `oops.Host._apply_overrides()` names the file:
-  `abspath` only for an image file that exists locally or a remote one already in the
-  cache, and it never creates a directory.
+  any other index to its own directory. `oops.Host._apply_overrides()` names the file
+  and never creates a directory; an index row never has `abspath`, since its image file
+  is not retrieved. Each row's camera frame is freed with its Snapshot only with
+  SETI/rms-oops#252; without it, memory grows by a few KB per row.
 - `from_index()` returns an iterator. It checks its arguments and gets the row iterator
   from `_index_rows()`, then returns a generator expression that builds each row's
   Snapshot when the iteration reaches it. It must not be a generator function, which
@@ -254,7 +257,7 @@ apply here to the stubs described below.
   array, so the header of any `VicarImage` with a file path, read by the host or given
   by the caller, in a full or an astrometry read, comes from the file's `VicarLabel`
   (`_header_as_written()`), and `header_dict` is the same from every input that reads
-  the header. `from_file()` raises `OopsTypeError` for an unknown keyword and
+  the header. `from_file()` raises `TypeError` for an unknown keyword and
   `OopsValueError` for a `select` other than None, as `from_index()` does;
   `oops.Host.from_file()` passes the path and the caller's arguments unchanged, so both
   entry points give the same Snapshot. `spacecraft`, the int 1 or 2, is how a consumer
@@ -264,10 +267,14 @@ apply here to the stubs described below.
 - `filepath`, `basename`, `abspath` and `image_url` name the image file on every input.
   They are absent for parsed content without a file path (a `Pds3Label` made from text, a
   `VicarImage` made from an array), and a full read of such content raises
-  `HostFormatError` ("no file path is known"). `abspath` is present only when the image
-  file exists locally or is already in the cache, the same rule in `from_file()` and
-  `from_index()`. Tests of cache state use the `file_cache` fixture, a private
-  `FileCache`, never the shared one.
+  `HostFormatError` ("no file path is known"). `abspath` is given only by a read that
+  retrieved the image file in this call to read its data (operator, 2026-11-20: a file
+  that exists remotely need not exist locally until it is retrieved): the path that
+  `FCPath.retrieve()` returns, passed to `oops.Host._apply_overrides(abspath=...)`.
+  `_read_vicar_image()` retrieves before it reads; an image file given as a path, which
+  oops has read through the cache, is retrieved again, a no-op. An astrometry read, a
+  `VicarImage` the caller gives, and `from_index()` never give it. Tests of cache state
+  use the `file_cache` fixture, a private `FileCache`, never the shared one.
 - The data are read where the VICAR header places them, not where the label does: the
   label of C2673426_GEOMED in VGISS_7205 points a record early, into its two-record
   header, and that of C3489611_GEOMED in VGISS_6112 a record late. The header supplies

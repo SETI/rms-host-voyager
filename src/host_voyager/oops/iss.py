@@ -477,8 +477,7 @@ class VoyagerISS(oops.Host):
     def from_file(fileinfo, *, return_all_planets=False, pds3_options=None,
                   astrometry=False, select=None, target=None, lightsource=None,
                   path=None, frame=None, cadence=None, fov=None, calibrations=None,
-                  timeshift=None, navigation=None, tracker=None, parallel=None,
-                  **kwargs):
+                  timeshift=None, navigation=None, tracker=None, parallel=None):
         """A Snapshot object based on a given Voyager ISS image file or its label.
 
         Parameters:
@@ -539,7 +538,6 @@ class VoyagerISS(oops.Host):
                 time, different frame and FOV) relative to which this Observation has a
                 fixed offset. Note that no more than one of `parallel` and `tracker` can
                 be specified.
-            **kwargs: Any other keyword argument raises an error.
 
         Returns:
             Snapshot: The observation, with subfields `dict`, `host`, `instrument`,
@@ -607,10 +605,11 @@ class VoyagerISS(oops.Host):
               alone, as its FDS image number "hhhhh.mm", which is spelled the same way.
             - `filepath`, `basename`, `abspath` and `image_url` name the image file,
               even when the PDS3 label is given; with `astrometry`, as the label names
-              it. `abspath` is present only if the image file is on the local file
-              system or a remote one is already in the local cache, so it never names a
-              file that does not exist. All four are absent if the parsed content given
-              has no file path.
+              it. `abspath`, the local path of the image file, is present only if this
+              call retrieved the file to read its data: never with `astrometry`, and
+              never for a VicarImage given. For a remote file it names the copy in the
+              local cache. All four are absent if the parsed content given has no file
+              path.
 
             The time of the image, the close of its shutter, is STOP_TIME, else
             IMAGE_TIME, and its exposure is EXPOSURE_DURATION. If no source read gives
@@ -653,15 +652,12 @@ class VoyagerISS(oops.Host):
                 rather than an image, as the RESLOC and GEOMA files do.
             oops.host.WrongHostError: If the file, or the parsed content given, is not a
                 Voyager ISS image or label.
-            oops.OopsTypeError: If a keyword argument is not one of those listed.
             oops.OopsValueError: If `select` is not None, or if `pds3_options` holds an
                 option that the PDS3 label parser does not accept.
             OSError: If the file, or unless `astrometry` is True the image file a PDS3
                 label names, cannot be read.
         """
 
-        # A mistaken keyword, such as "astrometric", must not be dropped silently
-        VoyagerISS._check_keywords('from_file', kwargs)
         oops.Host._check_select(select, unit='Voyager ISS image file')
 
         VoyagerISS.initialize()     # define everything the first time through
@@ -693,16 +689,22 @@ class VoyagerISS(oops.Host):
         # Read the data, if needed, where the VICAR header places them, whichever file
         # was given; the labels of some GEOMED products place the image a record too
         # early or too late, such as C2673426_GEOMED of VGISS_7205 and C3489611_GEOMED
-        # of VGISS_6112.
+        # of VGISS_6112. The image file has a local path, `abspath`, only if this call
+        # retrieved it to read the data: a VicarImage that the caller gives was read
+        # elsewhere.
         data = None
+        abspath = None
         if not astrometry:
             if not isinstance(image, VicarImage):
                 if filepath is None:
                     raise oops.host.HostFormatError('no file path is known for the '
                                                     'Voyager ISS content given, so its '
                                                     'image file cannot be read')
-                image = VoyagerISS._check_image_type(
-                    VoyagerISS._read_vicar_image(filepath), filepath)
+                (image, abspath) = VoyagerISS._read_vicar_image(filepath)
+                image = VoyagerISS._check_image_type(image, filepath)
+            elif isinstance(fileinfo, (str, pathlib.Path, FCPath)):
+                # oops read the image file through the cache; this finds its copy there
+                abspath = filepath.retrieve()
             data = image.data_2d
             if header is None:
                 header = VoyagerISS._header_as_written(image)
@@ -737,7 +739,7 @@ class VoyagerISS(oops.Host):
         sources = {'label_dict': label_dict, 'header_dict': header_dict,
                    'if_scale': None if header is None else VoyagerISS._if_scale(header)}
         return VoyagerISS._make_snapshot(dict_, filepath=filepath, data=data,
-                                         sources=sources,
+                                         abspath=abspath, sources=sources,
                                          return_all_planets=return_all_planets,
                                          check_pointing=True, overrides=overrides)
 
@@ -869,13 +871,14 @@ class VoyagerISS(oops.Host):
 
     @staticmethod
     def _read_vicar_image(filepath):
-        """The VICAR image and header in an image file.
+        """The VICAR image and header in an image file, and the file's local path.
 
         Parameters:
             filepath (FCPath): The path to the image file.
 
         Returns:
-            VicarImage: The image with its header.
+            tuple[VicarImage, pathlib.Path]: The image with its header, and the local
+            path of the file, which a remote file is retrieved to.
 
         Raises:
             oops.host.VicarHostError: If the header cannot be parsed or the data are cut
@@ -883,8 +886,9 @@ class VoyagerISS(oops.Host):
             OSError: If the file cannot be read.
         """
 
+        local = filepath.retrieve()
         try:
-            return VicarImage(filepath, strict=False)
+            return (VicarImage(local, strict=False), local)
         except VicarError as err:
             raise oops.host.VicarHostError(f'cannot parse the VICAR header of '
                                            f'{filepath}: {err}') from err
@@ -942,8 +946,7 @@ class VoyagerISS(oops.Host):
                    row_dicts=None, pds3_options=None, filter=None,
                    return_all_planets=False, select=None, target=None, lightsource=None,
                    path=None, frame=None, cadence=None, fov=None, calibrations=None,
-                   timeshift=None, navigation=None, tracker=None, parallel=None,
-                   **kwargs):
+                   timeshift=None, navigation=None, tracker=None, parallel=None):
         """An iterator over Snapshots, one for each row of a Voyager ISS raw image index.
 
         It reads a Ring-Moon Systems Node metadata raw image index and its supplement.
@@ -1019,7 +1022,6 @@ class VoyagerISS(oops.Host):
                 time, different frame and FOV) relative to which this Observation has a
                 fixed offset. Note that no more than one of `parallel` and `tracker` can
                 be specified.
-            **kwargs: Any other keyword argument raises an error.
 
         Returns:
             collections.abc.Iterator[Snapshot]: One raw 800x800 observation per filtered
@@ -1027,8 +1029,10 @@ class VoyagerISS(oops.Host):
             `instrument`, `detector`, `planet`, `spacecraft`, `time_from_sclk`,
             `spice_kernels`, `filepath`, `basename`, `image_url`, `spice_to_frame`,
             `spice_frame_name` and `spice_frame_id` inserted, and `filter`,
-            `label_target`, `spacecraft_clock_start_count`, `spacecraft_clock_stop_count`
-            and `abspath` when available, as described for :meth:`from_file`.
+            `label_target`, `spacecraft_clock_start_count` and
+            `spacecraft_clock_stop_count` when available, as described for
+            :meth:`from_file`. A Snapshot never has `abspath`, because reading an index
+            does not retrieve the image files.
 
             `dict` is the row, merged with its row of the supplement, without the columns
             whose values mean unknown, as :meth:`from_file` lists them, the indexes'
@@ -1044,14 +1048,12 @@ class VoyagerISS(oops.Host):
             where the PDS Ring-Moon Systems Node holdings keep it,
             "<holdings>/metadata/VGISS_6xxx/VGISS_6109/", the volume is
             "<holdings>/volumes/VGISS_6xxx/VGISS_6109"; for an index anywhere else, it is
-            the directory VOLUME_NAME beside the index. `abspath` is present only if the
-            image file is on the local file system or a remote one is already in the
-            local cache, and reading an index never creates a directory. A row that
-            raises an error ends the iteration, so the rows after it are reached only
-            with a `filter` that leaves it out. The pointing is not checked: if `frame`
-            is not given and the SPICE kernels cannot supply an image's pointing,
-            evaluating its frame raises :class:`oops.OopsSpiceError`, as
-            :meth:`from_file` describes.
+            the directory VOLUME_NAME beside the index. Reading an index never creates
+            a directory. A row that raises an error ends the iteration, so the rows
+            after it are reached only with a `filter` that leaves it out. The pointing
+            is not checked: if `frame` is not given and the SPICE kernels cannot supply
+            an image's pointing, evaluating its frame raises :class:`oops.OopsSpiceError`,
+            as :meth:`from_file` describes.
 
             The tables are checked only for the errors listed below. If the table reader
             cannot read a value as the number its column describes, it issues a warning
@@ -1064,9 +1066,8 @@ class VoyagerISS(oops.Host):
                 iteration reaches that row.
             ValueError: When the iteration reaches a row that gives as text a number the
                 Snapshot needs, such as an EXPOSURE_DURATION that holds a letter.
-            oops.OopsTypeError: If a keyword argument is not one of those listed; or,
-                when the iteration reaches the row, if a range in `filter` cannot be
-                compared with the row's value.
+            oops.OopsTypeError: When the iteration reaches the row, if a range in
+                `filter` cannot be compared with the row's value.
             oops.OopsValueError: If `select` is not None, `filter` uses a column that
                 neither table has, or `pds3_options` holds an option that the PDS3 label
                 parser does not accept. With `row_dicts`, `filter` is checked against the
@@ -1087,7 +1088,7 @@ class VoyagerISS(oops.Host):
                 counting rows from 0: at a row where the index row and the supplement row
                 in the same position give different files; at the row where the
                 supplement ends before the index; after the last row a table holds, if it
-                holds fewer rows than its label says; at the first of the ten rows read
+                holds fewer rows than its label says; at the first of the 100 rows read
                 with a row longer than the label's row length, none of which is yielded;
                 and after the last row, if the supplement has more rows than the index or
                 a table more rows than its label says.
@@ -1098,8 +1099,6 @@ class VoyagerISS(oops.Host):
                 cannot be read.
         """
 
-        # A mistaken keyword, such as "supplementary", must not be dropped silently (#20)
-        VoyagerISS._check_keywords('from_index', kwargs)
         oops.Host._check_select(select, unit='row of a Voyager ISS raw image index')
 
         # The supplement is required, so None is refused rather than taken to mean "read
@@ -1259,7 +1258,7 @@ class VoyagerISS(oops.Host):
         return contents
 
     @staticmethod
-    def _make_snapshot(dict_, filepath, data=None, *, sources=None,
+    def _make_snapshot(dict_, filepath, data=None, *, abspath=None, sources=None,
                        return_all_planets=False, check_pointing, overrides):
         """A Snapshot built from merged metadata or a row of an index.
 
@@ -1270,6 +1269,9 @@ class VoyagerISS(oops.Host):
                 not known.
             data (numpy.ndarray, optional): The image array; None to omit the `data`
                 subfield.
+            abspath (pathlib.Path, optional): The local path of the image file, given
+                only when this call retrieved the file to read `data`; None to omit the
+                `abspath` subfield.
             sources (dict[str, Any], optional): The values of the subfields `label_dict`,
                 `header_dict` and `if_scale`, each None if it is absent.
             return_all_planets (bool, optional): Include kernels for all planets, not just
@@ -1342,9 +1344,9 @@ class VoyagerISS(oops.Host):
             params['frame'] = VoyagerISS._camera_frame(dict_, vgr, camera, tstop,
                                                        filepath, name)
 
-        # This sets the path subfields of the image file too: `abspath` only if the file
-        # is local or already in the local cache; oops never creates a directory here
-        oops.Host._apply_overrides(params, filepath, **overrides)
+        # This sets the path subfields of the image file too, `abspath` only if given;
+        # oops never creates a directory here
+        oops.Host._apply_overrides(params, filepath, abspath=abspath, **overrides)
 
         # A frame without pointing raises OopsSpiceError when it is evaluated, so evaluate
         # the frame as the observation will, after the overrides. The check of oops,
