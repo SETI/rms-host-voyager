@@ -951,9 +951,11 @@ class VoyagerISS(oops.Host):
 
         It reads a Ring-Moon Systems Node metadata raw image index and its supplement.
         The call checks the arguments and reads the labels of the index and its
-        supplement. The iteration then reads the rows of both tables a few at a time, in
-        step, and builds each row's Snapshot when it reaches that row, so the tables are
-        never held in memory whole.
+        supplement; only for an index label without DATA_SET_ID, which every VGISS
+        metadata index label gives, does it also read the first row, to check that the
+        index is Voyager ISS. The iteration then reads the rows of both tables a few at a
+        time, in step, and builds each row's Snapshot when it reaches that row, so the
+        tables are never held in memory whole.
 
         Parameters:
             filepath (str | pathlib.Path | FCPath): The path to the PDS label of a VGISS
@@ -1114,9 +1116,10 @@ class VoyagerISS(oops.Host):
         VoyagerISS.initialize()
 
         # The rows are read, paired by position with the supplement's, and filtered as
-        # the iteration proceeds; the call reads only the labels. Given rows are used as
-        # they are, so the index label is needed only to read the tables. The name of the
-        # index is checked either way.
+        # the iteration proceeds; the call reads only the labels, and the first row only
+        # if the index label lacks DATA_SET_ID. Given rows are used as they are, so the
+        # index label is needed only to read the tables. The name of the index is checked
+        # either way.
         if row_dicts is None:
             label = VoyagerISS._index_label(filepath, label, pds3_options)
         rows = VoyagerISS._index_rows(filepath, supplement=supplement, label=label,

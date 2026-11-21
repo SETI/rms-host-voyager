@@ -187,7 +187,8 @@ apply here to the stubs described below.
   (`_detect_in_index()`; every VGISS index label, metadata or volume, gives one such as
   "VG1/VG2-S-ISS-2/3/4/6-PROCESSED-V1.0") and passes the call, every argument included,
   to `VoyagerISS.from_index()`. That reads nothing itself: `oops.Host._index_rows()`
-  reads the labels at call time and streams the rows of both tables with
+  reads the labels at call time (and the first row too, to check the host, if the label
+  lacks `DATA_SET_ID`, also on a direct call) and streams the rows of both tables with
   `PdsTable(defer_load=True).iter_dicts`, 100 at a time, pairing them by position because
   `MERGE_SUPPLEMENT_BY_FILE` is False. A survey of all 182 raw image indexes (the 91 in
   the metadata tree and their `_v1.0` copies) found every supplement equal in length and
