@@ -32,6 +32,9 @@ variables:
 The kernels and the database are the ones that OOPS itself uses. The
 `rms-oops README <https://github.com/SETI/rms-oops#environment-variables>`_ describes
 these variables and the ``SPICE`` directory of ``$OOPS_RESOURCES`` that holds them.
+The Ring-Moon Systems Node publishes these resources, the kernels and ``SPICE.db``
+included, at ``https://storage.googleapis.com/rms-node-oops-resources``, a URL that
+``OOPS_RESOURCES`` can name directly.
 
 For both spacecraft, the host furnishes the kernels that the database lists: the scan
 platform C kernels, the spacecraft ephemeris of each planetary encounter, and the

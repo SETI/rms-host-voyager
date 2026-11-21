@@ -45,7 +45,8 @@ apply here to the stubs described below.
   change. The `[tool.mypy] exclude`, the override list in `pyproject.toml` and
   `.stubtest-allowlist` keep it off the stub-less modules. The two
   `type: ignore[override]` comments are real mismatches with `oops.Host`: `from_file`
-  names its first parameter `fileinfo`, and neither method takes `**kwargs`.
+  names its first parameter `fileinfo`, neither method takes `**kwargs`, and both type
+  `select` as `None`, the only value they accept.
 - `docs/conf.py` resolves the short class names in docstrings (`FCPath`, `Observation`,
   ...) through intersphinx with `_SHORT_NAMES`. Add a name there when a nitpicky build
   reports a class from another RMS package.

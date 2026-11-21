@@ -35,8 +35,9 @@ __all__ = ['VoyagerISS']
 
 class VoyagerISS(Host):
     # The runtime names the first parameter `fileinfo`, where Host names it `filepath`,
-    # and does not take **kwargs, where Host does, so that Python refuses a keyword not
-    # listed with TypeError. Without a `frame`, an image whose pointing the SPICE kernels
+    # does not take **kwargs, where Host does, so that Python refuses a keyword not
+    # listed with TypeError, and accepts only None for select, which Host types more
+    # widely. Without a `frame`, an image whose pointing the SPICE kernels
     # cannot supply raises oops.OopsSpiceError, "no Voyager 1 ISS NAC pointing at <time>
     # for <image file>: SPICE(CKINSUFFDATA)", whose cause is the SPICE exception. The
     # time is that at which the Snapshot evaluates its frame: the midtime after any
@@ -60,8 +61,7 @@ class VoyagerISS(Host):
         fileinfo: str | pathlib.Path | FCPath | Pds3Label | VicarLabel
         | VicarImage, *,
         return_all_planets: bool = False, pds3_options: dict[str, Any] | None = None,
-        astrometry: bool = False,
-        select: int | slice | str | tuple[int | slice | str, ...] | None = None,
+        astrometry: bool = False, select: None = None,
         target: str | Body | None = None, lightsource: LightSource | None = None,
         path: str | Path | None = None, frame: str | Frame | None = None,
         cadence: Cadence | None = None, fov: FOV | None = None,
@@ -80,11 +80,11 @@ class VoyagerISS(Host):
     # select must be None (oops.OopsValueError). The call reads only the labels, and the
     # first row only if the index label lacks DATA_SET_ID; the iterator reads the rows of
     # the index and its supplement a few at a time, in step, and builds each row's
-    # Snapshot when it reaches the row. A row whose files differ
-    # between the two tables raises oops.host.HostIndexError at that row. A Snapshot
-    # never has an abspath, because the image files are not retrieved. Host takes
-    # **kwargs here too, and the runtime does not, so that Python refuses a keyword not
-    # listed with TypeError.
+    # Snapshot when it reaches the row. A row whose files differ between the two tables
+    # raises oops.host.HostIndexError at that row. A Snapshot never has an abspath,
+    # because the image files are not retrieved. Host takes **kwargs here too, and the
+    # runtime does not, so that Python refuses a keyword not listed with TypeError; and
+    # Host accepts other values of select.
     @staticmethod
     def from_index(  # type: ignore[override]
         filepath: str | pathlib.Path | FCPath, *,
@@ -93,7 +93,7 @@ class VoyagerISS(Host):
         row_dicts: Iterable[dict[str, Any]] | None = None,
         pds3_options: dict[str, Any] | None = None,
         filter: dict[str, Any] | None = None, return_all_planets: bool = False,
-        select: int | slice | str | tuple[int | slice | str, ...] | None = None,
+        select: None = None,
         target: str | Body | None = None, lightsource: LightSource | None = None,
         path: str | Path | None = None, frame: str | Frame | None = None,
         cadence: Cadence | None = None, fov: FOV | None = None,
