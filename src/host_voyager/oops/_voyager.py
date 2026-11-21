@@ -100,10 +100,16 @@ class _Voyager:
                 such as (6,) for Saturn alone, to pass to
                 :meth:`~oops.Body.define_solar_system`, which defines each planet named
                 and its moons. None or 0 means all.
-            asof (str, optional): Only use SPICE kernels that existed before this date;
-                None to ignore.
+            asof (str, optional): A date in ISO format. Each kernel is chosen from those
+                released on or before it, or, where the database does not hold one so
+                old, as if no date were given; for the C kernels, ValueError is raised
+                instead. The merged cruise trajectories are left out if they were
+                released after it. None to choose the newest kernels.
             irregulars (bool, optional): True to include the irregular satellites; False
                 otherwise.
+
+        Raises:
+            ValueError: If no C kernel of a spacecraft was released by `asof`.
         """
 
         if _Voyager.initialized:
@@ -196,8 +202,9 @@ class _Voyager:
             instruments (list[str], optional): The names of the instruments whose kernels
                 to load. On the first call, 'ISS' is always included.
             asof (str, optional): If this specifies a date or date-time in ISO format,
-                then only kernels that existed before the specified date are used.
-                Otherwise, the most recent versions are always loaded.
+                each kernel is chosen from those released on or before it, or, where the
+                database does not hold one so old, as if no date were given. Otherwise,
+                the most recent versions are always loaded.
         """
 
         # Copy so that the caller's list is never modified
