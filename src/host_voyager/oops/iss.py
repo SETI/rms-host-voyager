@@ -1084,9 +1084,9 @@ class VoyagerISS(oops.Host):
             oops.OopsValueError: If `select` is not None, `filter` uses a column that
                 neither table has, or `pds3_options` holds an option that the PDS3 label
                 parser does not accept while neither `label` nor `row_dicts` is given.
-                With `row_dicts`, `filter` is checked against the
-                first row, when the call is made if `row_dicts` is a sequence and
-                otherwise when the iteration reads that row.
+                With `row_dicts`, `filter` is checked against the first row, when the
+                call is made if `row_dicts` is a sequence and otherwise when the
+                iteration reads that row.
             oops.host.HostFormatError: If a row lacks the exposure, the camera or the
                 spacecraft; both the time and the clock count; or, unless `frame` is
                 given, the spacecraft clock stop count. The message names the missing

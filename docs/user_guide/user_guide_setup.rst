@@ -69,9 +69,9 @@ Initialization
 The first call to :meth:`~host_voyager.oops.iss.VoyagerISS.from_file` or
 :meth:`~host_voyager.oops.iss.VoyagerISS.from_index` loads the kernels and defines the
 cameras' fields of view. To choose the bodies that OOPS defines, or to use the kernels
-released by a given date, call
-:meth:`~host_voyager.oops.iss.VoyagerISS.initialize` before opening the first image.
-Its ``planets`` argument is one planet number, from 1 for Mercury to 9 for Pluto, or a
+released by a given date, call :meth:`~host_voyager.oops.iss.VoyagerISS.initialize`
+before that first call, whether it opens an image or reads an index. Its ``planets``
+argument is one planet number, from 1 for Mercury to 9 for Pluto, or a
 sequence of them. This call defines only Saturn, planet 6, and its moons:
 
 .. code-block:: python
