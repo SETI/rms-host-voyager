@@ -191,8 +191,8 @@ apply here to the stubs described below.
   reads the labels at call time (and the first row too, to check the host, if the label
   lacks `DATA_SET_ID`, also on a direct call) and streams the rows of both tables with
   `PdsTable(defer_load=True).iter_dicts`, 100 at a time, pairing them by position because
-  `MERGE_SUPPLEMENT_BY_FILE` is False. A survey of all 182 raw image indexes (the 91 in
-  the metadata tree and their `_v1.0` copies) found every supplement equal in length and
+  `MERGE_SUPPLEMENT_BY_FILE` is False. A survey of all 91 raw image indexes in
+  the metadata tree found every supplement equal in length and
   in agreement on `VOLUME_NAME`, `FILE_SPECIFICATION_NAME` and `PRODUCT_ID` row for row.
   A row whose files differ raises `HostIndexError` at that row. The default validation
   compares `PRODUCT_ID` and `VOLUME_NAME`, the columns the tables share beyond the file
