@@ -100,16 +100,22 @@ class _Voyager:
                 such as (6,) for Saturn alone, to pass to
                 :meth:`~oops.Body.define_solar_system`, which defines each planet named
                 and its moons. None or 0 means all.
-            asof (str, optional): A date in ISO format. Each kernel is chosen from those
-                released on or before it, or, where the database does not hold one so
-                old, as if no date were given; for the C kernels, ValueError is raised
-                instead. The merged cruise trajectories are left out if they were
-                released after it. None to choose the newest kernels.
+            asof (str, optional): A date in ISO format, which every database query
+                receives as the date-time that :meth:`_format_asof` returns. Each kernel
+                is chosen from those released before it, the leap seconds kernel
+                included. A query of which every kernel was released on or after the
+                date silently uses the kernel it would choose without a date; a set of C
+                kernels keeps only those released before the date, so for any date up
+                to and including 2007-06-05 the cameras' pointing is left out. The C
+                kernels never fall back, and ValueError is raised instead. The merged
+                cruise trajectories are left out for any date up to and including
+                2013-01-25. None to choose the newest kernels.
             irregulars (bool, optional): True to include the irregular satellites; False
                 otherwise.
 
         Raises:
-            ValueError: If no C kernel of a spacecraft was released by `asof`.
+            ValueError: If none of a spacecraft's C kernels was released before `asof`,
+                as for any date before 1990-04-16.
         """
 
         if _Voyager.initialized:
@@ -117,7 +123,9 @@ class _Voyager:
 
         asof = _Voyager._format_asof(asof)
 
-        # Make sure the leap seconds have been loaded
+        # Make sure the leap seconds have been loaded. This loads the newest kernel;
+        # define_solar_system() below loads the one that asof chooses after it, which
+        # takes its place.
         oops.spice.load_leap_seconds()
 
         # The cruise trajectories go first: the planetary and encounter kernels furnished
@@ -201,10 +209,10 @@ class _Voyager:
         Parameters:
             instruments (list[str], optional): The names of the instruments whose kernels
                 to load. On the first call, 'ISS' is always included.
-            asof (str, optional): If this specifies a date or date-time in ISO format,
-                each kernel is chosen from those released on or before it, or, where the
-                database does not hold one so old, as if no date were given. Otherwise,
-                the most recent versions are always loaded.
+            asof (str, optional): A date or date-time in ISO format. Each kernel is
+                chosen from those released before it, or, where every kernel that the
+                query could choose was released on or after it, the kernel chosen
+                without a date is used, silently. None to load the newest.
         """
 
         # Copy so that the caller's list is never modified

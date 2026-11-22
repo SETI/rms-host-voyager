@@ -45,7 +45,8 @@ Reading an image file
 
 :exc:`~oops.OopsValueError`
     ``select`` is not None, or ``pds3_options`` holds an option that the parser does not
-    accept.
+    accept. The options are checked only when the method parses a PDS3 label file, so
+    they are not checked for a VICAR file or for a label passed in already parsed.
 
 :exc:`OSError`
     A file cannot be read, including the image file that a PDS3 label points to, in a
@@ -55,8 +56,8 @@ Reading a PDS3 index
 ====================
 
 :meth:`~host_voyager.oops.iss.VoyagerISS.from_index` raises the errors listed below.
-When the rows are given in ``row_dicts``, the call reads neither the tables nor their
-labels, so the errors that come from reading a label or a table are never raised: the
+When the rows are given in ``row_dicts``, the call leaves the tables and their labels
+unread, so the errors that come from reading a label or a table are never raised: the
 labels need not exist or be readable, the index is not checked to be a Voyager ISS
 index, and ``pds3_options`` is not checked. The checks of ``select``, ``supplement``,
 and ``filter`` are still made, as their entries say, and so are those of each row.
@@ -116,8 +117,9 @@ and ``filter`` are still made, as their entries say, and so are those of each ro
 
 :exc:`~oops.OopsValueError`
     ``select`` is not None, ``filter`` gives a column that neither table has, or
-    ``pds3_options`` holds an option that the parser does not accept. When ``row_dicts``
-    is given, ``filter`` is checked against the first row: when the call is made if the
+    ``pds3_options`` holds an option that the parser does not accept. The options are
+    checked only when the call parses the index's label, so they are not checked when
+    ``label`` is given. When ``row_dicts`` is given, ``filter`` is checked against the first row: when the call is made if the
     rows are a list or another sequence, and otherwise when the iteration reads that row.
 
 :exc:`~oops.host.PdsHostError`

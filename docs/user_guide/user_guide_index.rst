@@ -82,7 +82,7 @@ Other arguments
 ``row_dicts``
     The rows themselves, one dictionary per row, already merged with the supplement, if
     the tables have already been read. Any iterable works, a generator included. The
-    rows are used as they are, and neither the tables nor their labels are read, so the
+    rows are used as they are, and the tables and their labels are left unread, so the
     checks that need a label are skipped: the labels need not exist, the index is not
     checked to be a Voyager ISS index, and ``pds3_options`` is not checked. The name of
     the index is still checked when ``supplement`` is left at its default, and ``filter``

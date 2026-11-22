@@ -68,8 +68,8 @@ Initialization
 
 The first call to :meth:`~host_voyager.oops.iss.VoyagerISS.from_file` or
 :meth:`~host_voyager.oops.iss.VoyagerISS.from_index` loads the kernels and defines the
-cameras' fields of view. To choose the bodies that OOPS defines, or to prefer the
-kernels released by a given date, call
+cameras' fields of view. To choose the bodies that OOPS defines, or to use the kernels
+released before a given date, call
 :meth:`~host_voyager.oops.iss.VoyagerISS.initialize` before opening the first image.
 Its ``planets`` argument is one planet number, from 1 for Mercury to 9 for Pluto, or a
 sequence of them. This call defines only Saturn, planet 6, and its moons:
@@ -80,16 +80,29 @@ sequence of them. This call defines only Saturn, planet 6, and its moons:
 
    VoyagerISS.initialize(planets=(6,))
 
-Its ``asof`` argument takes a date, such as ``'1995-01-01'``, and each kernel is then
-chosen from those released on or before that date where possible. Where the kernel
-database does not hold a kernel of some kind that old, a later one is used, the one that
-would be chosen without a date, and no warning is given. For example,
-``asof='1995-01-01'`` still loads the leap seconds kernel released in 2016, because the
-database does not hold an earlier one. The C kernels are the exception: if none was
-released by the date, as for any date before 1990-04-16,
-:meth:`~host_voyager.oops.iss.VoyagerISS.initialize` raises :exc:`ValueError`. The
-merged cruise trajectories of the two spacecraft, released on 2013-01-25, are left out
-for an earlier date, and no other kernel takes their place.
+Its ``asof`` argument takes a date, such as ``'2010-01-01'``, and each kernel is then
+chosen from those released before that date. Where every kernel that a query could
+choose was released on or after the date, the query silently uses the kernel it would
+choose without a date. That happens only when the whole query comes back empty, so a
+date can leave out some of the kernels that cover the mission:
+
+- The C kernels never fall back to the newest: for any date before 1990-04-16,
+  :meth:`~host_voyager.oops.iss.VoyagerISS.initialize` raises :exc:`ValueError`. For
+  any date up to and including 2007-06-05, only the C kernels of the spacecraft
+  bodies, released on 1990-04-16, are used. The C kernels that give the cameras'
+  pointing, released on 2007-06-05, are left out, so the pointing of every image is
+  missing (see :doc:`user_guide_errors`).
+- The merged cruise trajectories of the two spacecraft, released on 2013-01-25, are left
+  out for any date up to and including 2013-01-25, and no other kernel takes their
+  place. The positions of the spacecraft are then known only in the weeks around each
+  closest approach that the encounter SP kernels cover.
+
+The date decides the leap seconds too: the newest leap seconds kernel is loaded first,
+and the one that the date chooses is loaded after it and takes its place. With
+``asof='2010-01-01'``, the leap seconds kernel released on 2008-07-07 is used, which
+lacks the leap seconds of 2012 and later. Every leap seconds kernel in the database was
+released after 1995, so with ``asof='1995-01-01'`` the newest, released in 2016, is
+used.
 
 Later calls to :meth:`~host_voyager.oops.iss.VoyagerISS.initialize` have no effect.
 

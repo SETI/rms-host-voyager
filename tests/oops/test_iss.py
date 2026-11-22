@@ -2100,8 +2100,8 @@ def test_from_index_does_not_pair_given_rows_with_a_named_supplement() -> None:
 
 
 def test_from_index_with_given_rows_skips_the_labels(tmp_path: pathlib.Path) -> None:
-    """Given rows are used in place of the tables, so the call reads neither label: an
-    index label and a supplement that do not exist, and an option that the label parser
+    """Given rows are used in place of the tables, so the call leaves both labels unread:
+    an index label and a supplement that do not exist, and an option that the label parser
     would refuse, still give a Snapshot for every row."""
 
     obs = list(VoyagerISS.from_index(tmp_path / 'VGISS_6109_raw_image_index.lbl',

@@ -82,9 +82,10 @@ class VoyagerISS(Host):
     # the index and its supplement a few at a time, in step, and builds each row's
     # Snapshot when it reaches the row. A row whose files differ between the two tables
     # raises oops.host.HostIndexError at that row. Rows given in row_dicts take the place
-    # of the tables: the call then reads neither label, so the checks of the labels and of
-    # pds3_options are not made, and the rows are not compared with the supplement's. A
-    # Snapshot never has an abspath, because the image files are not retrieved. Host takes
+    # of the tables: the call then leaves both labels unread, so the checks of the labels
+    # and of pds3_options are not made, and the rows are not compared with the
+    # supplement's; pds3_options is also left unchecked when label is given. A Snapshot
+    # never has an abspath, because the image files are not retrieved. Host takes
     # **kwargs here too, and the runtime does not, so that Python refuses a keyword not
     # listed with TypeError; and Host accepts other values of select.
     @staticmethod
