@@ -119,8 +119,9 @@ and ``filter`` are still made, as their entries say, and so are those of each ro
     ``select`` is not None, ``filter`` gives a column that neither table has, or
     ``pds3_options`` holds an option that the parser does not accept. The options are
     checked only when the call parses the index's label, so they are not checked when
-    ``label`` is given. When ``row_dicts`` is given, ``filter`` is checked against the first row: when the call is made if the
-    rows are a list or another sequence, and otherwise when the iteration reads that row.
+    ``label`` or ``row_dicts`` is given. When ``row_dicts`` is given, ``filter`` is
+    checked against the first row: when the call is made if the rows are a list or
+    another sequence, and otherwise when the iteration reads that row.
 
 :exc:`~oops.host.PdsHostError`
     The PDS3 label of the index or of the supplement cannot be parsed.

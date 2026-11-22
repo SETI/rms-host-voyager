@@ -1767,14 +1767,18 @@ class VoyagerISS(oops.Host):
                 after the start of the date silently uses the kernel it would choose
                 without a date. A set of C kernels keeps only those released by the
                 start of the date, so for any date up to and including 2007-06-05 the
-                cameras' pointing is left out. The C kernels never fall
-                back, and ValueError is raised instead. The merged cruise trajectories
-                are left out for any date up to and including 2013-01-25. None to choose
-                the newest kernels.
+                cameras' pointing is left out. The C kernels never fall back, and
+                ValueError is raised instead. The merged cruise trajectories are left out
+                for any date up to and including 2013-01-25. None to choose the newest
+                kernels.
             irregulars (bool, optional): True to include the irregular satellites; False
                 otherwise.
 
         Raises:
+            RuntimeError: If Saturn is among the planets and `asof` is a date from
+                2003-11-05 through 2004-04-26, because the frames kernel of Saturn's
+                small moons chosen for those dates has a malformed line that SPICE
+                rejects.
             ValueError: If none of a spacecraft's C kernels was released by the start
                 of `asof`, as for any date before 1990-04-16.
         """

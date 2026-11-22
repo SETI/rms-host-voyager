@@ -96,8 +96,13 @@ the mission:
   (see :doc:`user_guide_errors`).
 - The merged cruise trajectories of the two spacecraft, released at 16:12 on
   2013-01-25, are left out for any date up to and including 2013-01-25, and no other
-  kernel takes their place. The positions of the spacecraft are then known only in the weeks around each
-  closest approach that the encounter SP kernels cover.
+  kernel takes their place. The positions of the spacecraft are then known only in the
+  weeks around each closest approach that the encounter SP kernels cover.
+
+When Saturn is among the planets, as it is by default, any date from 2003-11-05
+through 2004-04-26 makes :meth:`~host_voyager.oops.iss.VoyagerISS.initialize` raise
+:exc:`RuntimeError`, because the frames kernel of Saturn's small moons chosen for those
+dates has a malformed line that SPICE rejects.
 
 The date decides the leap seconds too: the newest leap seconds kernel is loaded first,
 and the one that the date chooses is loaded after it and takes its place. With
