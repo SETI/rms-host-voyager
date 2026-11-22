@@ -98,7 +98,14 @@ Other arguments
     Must be None. Each row is one image, so there is nothing to select, and any other
     value raises :exc:`~oops.OopsValueError`.
 
-``return_all_planets``, ``pds3_options``, and the standard overrides
+``pds3_options``
+    Options for the PDS3 label parser. The options are checked when the call is made,
+    unless ``row_dicts`` is given, when they are not used. The index's label is parsed
+    with all of them, and the supplement's label with the method alone. Each label is
+    parsed with one method, the fast method unless the options give another, and no
+    later method is tried.
+
+``return_all_planets`` and the standard overrides
     The same as for :meth:`~host_voyager.oops.iss.VoyagerISS.from_file`, applied to every
     row.
 

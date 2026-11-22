@@ -195,10 +195,11 @@ apply here to the stubs described below.
   the metadata tree and their `_v1.0` copies) found every supplement equal in length and
   in agreement on `VOLUME_NAME`, `FILE_SPECIFICATION_NAME` and `PRODUCT_ID` row for row.
   A row whose files differ raises `HostIndexError` at that row. The default validation
-  compares `PRODUCT_ID`, the one column the tables share beyond the file key. Given
-  `row_dicts` are used as they are and filtered lazily; nothing reads a whole table. The
-  table reader's `_mask` entries are dropped; the only declared null constants (exposure
-  -99.9999, supplement `UNK` times), the `UNKNOWN` that the indexes give for
+  compares `PRODUCT_ID` and `VOLUME_NAME`, the columns the tables share beyond the file
+  key. Given `row_dicts` are used as they are and filtered lazily; nothing reads a
+  whole table.
+  The table reader's `_mask` entries are dropped; the only declared null constants
+  (exposure -99.9999, supplement `UNK` times), the `UNKNOWN` that the indexes give for
   `EARTH_RECEIVED_TIME` (1,524 rows) and `IMAGE_ID` (250), the empty `NOTE` (36,095),
   and the placeholder `IMAGE_ID` `0000Z1+000`/`0000Z2+000` (34 rows) never stand for
   real values. The supplement adds `START_TIME` and `STOP_TIME` with fractional seconds;

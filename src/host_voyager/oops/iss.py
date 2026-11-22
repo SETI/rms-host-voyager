@@ -981,7 +981,12 @@ class VoyagerISS(oops.Host):
                 STOP_TIME and the clock partition, so its time is the index's
                 IMAGE_TIME, to the second.
             pds3_options (dict[str, Any], optional): Any keyword arguments and their
-                values to be passed to the :class:`~pdsparser.Pds3Label` parser.
+                values to be passed to the :class:`~pdsparser.Pds3Label` parser. The
+                options are checked when the call is made, unless `row_dicts` is given,
+                when they are not used. The index's label is parsed with all of them, and
+                the supplement's label with the method alone. Each label is parsed with
+                one method, "fast" unless they give another, and no later method is
+                tried.
             filter (dict[str, Any], optional): A dictionary of index column names and
                 their values or a set or tuple of values. If provided, only rows of the
                 index in which each named column equals the value, falls in the set of
@@ -1071,10 +1076,11 @@ class VoyagerISS(oops.Host):
             oops.OopsTypeError: When the iteration reaches the row, if a range in
                 `filter` cannot be compared with the row's value.
             oops.OopsValueError: If `select` is not None, `filter` uses a column that
-                neither table has, or `pds3_options` holds an option that the PDS3 label
-                parser does not accept. With `row_dicts`, `filter` is checked against the
-                first row, when the call is made if `row_dicts` is a sequence and
-                otherwise when the iteration reads that row.
+                neither table has, or `pds3_options` names a method the parser does not
+                have or an option it does not take. The call checks the options when it
+                is made, unless `row_dicts` is given. With `row_dicts`, `filter` is
+                checked against the first row, when the call is made if `row_dicts` is a
+                sequence and otherwise when the iteration reads that row.
             oops.host.HostFormatError: If a row lacks the exposure, the camera or the
                 spacecraft; both the time and the clock count; or, unless `frame` is
                 given, the spacecraft clock stop count. The message names the missing

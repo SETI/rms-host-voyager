@@ -111,9 +111,11 @@ Reading a PDS3 index
 
 :exc:`~oops.OopsValueError`
     ``select`` is not None, ``filter`` gives a column that neither table has, or
-    ``pds3_options`` holds an option that the parser does not accept. When ``row_dicts``
-    is given, ``filter`` is checked against the first row: when the call is made if the
-    rows are a list or another sequence, and otherwise when the iteration reads that row.
+    ``pds3_options`` names a method the parser does not have or an option it does not
+    take. The call checks the options when it is made, unless ``row_dicts`` is given.
+    When ``row_dicts`` is given, ``filter`` is checked against the first row: when the
+    call is made if the rows are a list or another sequence, and otherwise when the
+    iteration reads that row.
 
 :exc:`~oops.host.PdsHostError`
     The PDS3 label of the index or of the supplement cannot be parsed.
