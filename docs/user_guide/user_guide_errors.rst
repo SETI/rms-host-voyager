@@ -45,7 +45,8 @@ Reading an image file
 
 :exc:`~oops.OopsValueError`
     ``select`` is not None, or ``pds3_options`` holds an option that the parser does not
-    accept.
+    accept. The options are checked only when the method parses a PDS3 label file, so
+    they are not checked for a VICAR file or for a label passed in already parsed.
 
 :exc:`OSError`
     A file cannot be read, including the image file that a PDS3 label points to, in a
@@ -55,8 +56,8 @@ Reading a PDS3 index
 ====================
 
 :meth:`~host_voyager.oops.iss.VoyagerISS.from_index` raises the errors listed below.
-When the rows are given in ``row_dicts``, the call reads neither the tables nor their
-labels, so the errors that come from reading a label or a table are never raised: the
+When the rows are given in ``row_dicts``, the call leaves the tables and their labels
+unread, so the errors that come from reading a label or a table are never raised: the
 labels need not exist or be readable, the index is not checked to be a Voyager ISS
 index, and ``pds3_options`` is not checked. The checks of ``select``, ``supplement``,
 and ``filter`` are still made, as their entries say, and so are those of each row.

@@ -653,7 +653,9 @@ class VoyagerISS(oops.Host):
             oops.host.WrongHostError: If the file, or the parsed content given, is not a
                 Voyager ISS image or label.
             oops.OopsValueError: If `select` is not None, or if `pds3_options` holds an
-                option that the PDS3 label parser does not accept.
+                option that the PDS3 label parser does not accept while the method parses
+                a PDS3 label file; the options are not checked for a VICAR file or for a
+                Pds3Label passed in.
             OSError: If the file, or unless `astrometry` is True the image file a PDS3
                 label names, cannot be read.
         """
@@ -957,9 +959,9 @@ class VoyagerISS(oops.Host):
         time, in step, and builds each row's Snapshot when it reaches that row, so the
         tables are never held in memory whole.
 
-        With `row_dicts`, the given rows take the place of the tables, and the call does
-        not read either label. The errors below that come from reading a label or a table
-        are then never raised: neither label need exist, the index need not be Voyager
+        With `row_dicts`, the given rows take the place of the tables, and the call leaves
+        both labels unread. The errors below that come from reading a label or a table
+        are then never raised: the labels need not exist, the index need not be Voyager
         ISS, and `pds3_options` is not checked. What is still checked is `select`, the
         name of `filepath` when `supplement` is the default, `filter` against the first
         row, and each row when the iteration reaches it.
@@ -1762,16 +1764,21 @@ class VoyagerISS(oops.Host):
                 such as (6,) for Saturn alone, to pass to
                 :meth:`~oops.Body.define_solar_system`, which defines each planet named
                 and its moons. None or 0 means all.
-            asof (str, optional): A date in ISO format. Each kernel is chosen from those
-                released on or before it, or, where the database does not hold one so
-                old, as if no date were given; for the C kernels, ValueError is raised
-                instead. The merged cruise trajectories are left out if they were
-                released after it. None to choose the newest kernels.
+            asof (str, optional): A date in ISO format. Each kernel is chosen from
+                those released before it, the leap seconds kernel included, and a query
+                of which every kernel was released on or after the date silently uses
+                the kernel it would choose without a date. A set of C kernels keeps only
+                those released before the date, so for any date up to and including
+                2007-06-05 the cameras' pointing is left out. The C kernels never fall
+                back, and ValueError is raised instead. The merged cruise trajectories
+                are left out for any date up to and including 2013-01-25. None to choose
+                the newest kernels.
             irregulars (bool, optional): True to include the irregular satellites; False
                 otherwise.
 
         Raises:
-            ValueError: If no C kernel of a spacecraft was released by `asof`.
+            ValueError: If none of a spacecraft's C kernels was released before `asof`,
+                as for any date before 1990-04-16.
         """
 
         if VoyagerISS._initialized:
