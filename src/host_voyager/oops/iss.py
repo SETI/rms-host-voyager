@@ -975,8 +975,9 @@ class VoyagerISS(oops.Host):
                 PDS label of the supplemental index, whose columns are merged into each
                 row; a raw image index needs its supplement. Its rows must list the same
                 files as the index's, in the same order, as every VGISS supplement does:
-                each index row is merged with the supplement row in the same position.
-                Where both tables give a column, the index value is kept. The default,
+                each index row is merged with the supplement row in the same position,
+                which must give the same PRODUCT_ID and VOLUME_NAME. Where both tables
+                give a column, the index value is kept. The default,
                 `oops.Host.SUPPLEMENT`, reads the file in the directory of `filepath`
                 whose name matches except that "_raw_image_index" is replaced by
                 "_supplemental_index" in upper or lower case.
@@ -990,9 +991,12 @@ class VoyagerISS(oops.Host):
                 supplement lacks STOP_TIME and the clock partition, so its time is the
                 index's IMAGE_TIME, to the second.
             pds3_options (dict[str, Any], optional): Any keyword arguments and their
-                values to be passed to the :class:`~pdsparser.Pds3Label` parser. They
-                are checked when the call parses the index label, which it does only if
-                neither `label` nor `row_dicts` is given.
+                values to be passed to the :class:`~pdsparser.Pds3Label` parser. The
+                options are checked when the call is made, unless `row_dicts` is given,
+                when they are not used. The index's label is parsed with all of them, and
+                the supplement's label with the method alone. Each label is parsed with
+                one method, "fast" unless they give another, and no later method is
+                tried.
             filter (dict[str, Any], optional): A dictionary of index column names and
                 their values or a set or tuple of values. If provided, only rows of the
                 index in which each named column equals the value, falls in the set of
@@ -1062,10 +1066,12 @@ class VoyagerISS(oops.Host):
             "<holdings>/metadata/VGISS_6xxx/VGISS_6109/", the volume is
             "<holdings>/volumes/VGISS_6xxx/VGISS_6109"; for an index anywhere else, it is
             the directory VOLUME_NAME beside the index. Reading an index never creates
-            a directory. A row that raises an error ends the iteration, so the rows
-            after it are reached only with a `filter` that leaves it out. The pointing
-            is not checked: if `frame` is not given and the SPICE kernels cannot supply
-            an image's pointing, evaluating its frame raises :class:`oops.OopsSpiceError`,
+            a directory. The iteration stops at the first row that raises an error.
+            `filter` can leave out a row whose Snapshot would raise, but it cannot avoid
+            an error in reading or pairing the rows of the tables, because the rows are
+            filtered only after they have been read and paired. The pointing is not
+            checked: if `frame` is not given and the SPICE kernels cannot supply an
+            image's pointing, evaluating its frame raises :class:`oops.OopsSpiceError`,
             as :meth:`from_file` describes.
 
             The tables are checked only for the errors listed below. If the table reader
@@ -1082,11 +1088,11 @@ class VoyagerISS(oops.Host):
             oops.OopsTypeError: When the iteration reaches the row, if a range in
                 `filter` cannot be compared with the row's value.
             oops.OopsValueError: If `select` is not None, `filter` uses a column that
-                neither table has, or `pds3_options` holds an option that the PDS3 label
-                parser does not accept while neither `label` nor `row_dicts` is given.
-                With `row_dicts`, `filter` is checked against the first row, when the
-                call is made if `row_dicts` is a sequence and otherwise when the
-                iteration reads that row.
+                neither table has, or `pds3_options` names a method the parser does not
+                have or an option it does not take. The call checks the options when it
+                is made, unless `row_dicts` is given. With `row_dicts`, `filter` is
+                checked against the first row, when the call is made if `row_dicts` is a
+                sequence and otherwise when the iteration reads that row.
             oops.host.HostFormatError: If a row lacks the exposure, the camera or the
                 spacecraft; both the time and the clock count; or, unless `frame` is
                 given, the spacecraft clock stop count. The message names the missing
@@ -1097,21 +1103,22 @@ class VoyagerISS(oops.Host):
             oops.host.HostIndexError: When the call is made: if `supplement` is None or
                 an empty string while `row_dicts` is not given; if `supplement` is
                 `oops.Host.SUPPLEMENT` and the name of `filepath` lacks
-                "_raw_image_index", also when `row_dicts` is given; or if a label does
-                not describe a table that can be read, as when it lacks the table it
-                points to. During the iteration, only if `row_dicts` is not given,
-                counting rows from 0: at a row where the index row and the supplement row
-                in the same position give different files; at the row where the
-                supplement ends before the index; after the last row a table holds, if it
-                holds fewer rows than its label says; at the first of the 100 rows read
-                with a row longer than the label's row length, none of which is yielded;
-                and after the last row, if the supplement has more rows than the index or
-                a table more rows than its label says.
+                "_raw_image_index", also when `row_dicts` is given; if a label does not
+                describe a table that can be read, as when it lacks the table it points
+                to; or if a table lacks the column FILE_SPECIFICATION_NAME. During the
+                iteration, only if `row_dicts` is not given, counting rows from 0: at a
+                row where the index row and the supplement row in the same position give
+                different files, or different values of PRODUCT_ID or VOLUME_NAME; at the
+                row where the supplement ends before the index; after the last row a
+                table holds, if it holds fewer rows than its label says; at the first of
+                the 100 rows read with a row longer than the label's row length, none of
+                which is yielded; and after the last row, if a table holds more rows than
+                its label says or the supplement more rows than the index.
             oops.host.PdsHostError: If the label of `filepath` or of the supplement cannot
                 be parsed.
             oops.host.WrongHostError: If `filepath` is not a Voyager ISS index.
             OSError: If the label of `filepath` or of a `supplement` that is specified
-                cannot be read.
+                does not exist or cannot be read.
         """
 
         oops.Host._check_select(select, unit='row of a Voyager ISS raw image index')

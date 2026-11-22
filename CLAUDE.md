@@ -196,8 +196,9 @@ apply here to the stubs described below.
   the metadata tree and their `_v1.0` copies) found every supplement equal in length and
   in agreement on `VOLUME_NAME`, `FILE_SPECIFICATION_NAME` and `PRODUCT_ID` row for row.
   A row whose files differ raises `HostIndexError` at that row. The default validation
-  compares `PRODUCT_ID`, the one column the tables share beyond the file key. Given
-  `row_dicts` are used as they are and filtered lazily; nothing reads a whole table.
+  compares `PRODUCT_ID` and `VOLUME_NAME`, the columns the tables share beyond the file
+  key. Given `row_dicts` are used as they are and filtered lazily; nothing reads a
+  whole table.
   `_index_rows()` returns given rows before it reads either label, so a direct call
   with `row_dicts` skips every label check (existence, parsing, host, `pds3_options`);
   only `select`, the index name under the default supplement and `filter` are checked
