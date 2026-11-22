@@ -1765,11 +1765,12 @@ class VoyagerISS(oops.Host):
                 :meth:`~oops.Body.define_solar_system`, which defines each planet named
                 and its moons. None or 0 means all.
             asof (str, optional): A date in ISO format. Each kernel is chosen from
-                those released before it, the leap seconds kernel included, and a query
-                of which every kernel was released on or after the date silently uses
-                the kernel it would choose without a date. A set of C kernels keeps only
-                those released before the date, so for any date up to and including
-                2007-06-05 the cameras' pointing is left out. The C kernels never fall
+                those released no later than the start (00:00) of that date, the leap
+                seconds kernel included, and a query of which every kernel was released
+                after the start of the date silently uses the kernel it would choose
+                without a date. A set of C kernels keeps only those released by the
+                start of the date, so for any date up to and including 2007-06-05 the
+                cameras' pointing is left out. The C kernels never fall
                 back, and ValueError is raised instead. The merged cruise trajectories
                 are left out for any date up to and including 2013-01-25. None to choose
                 the newest kernels.
@@ -1777,8 +1778,8 @@ class VoyagerISS(oops.Host):
                 otherwise.
 
         Raises:
-            ValueError: If none of a spacecraft's C kernels was released before `asof`,
-                as for any date before 1990-04-16.
+            ValueError: If none of a spacecraft's C kernels was released by the start
+                of `asof`, as for any date before 1990-04-16.
         """
 
         if VoyagerISS._initialized:
