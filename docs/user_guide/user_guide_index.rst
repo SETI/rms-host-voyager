@@ -14,10 +14,10 @@ or a label that cannot be read raises an error at once.
 The iteration then reads the rows of the two tables a few at a time and builds each
 row's Snapshot when it reaches that row. Only those few rows of the tables are held in
 memory, however long the index. The whole process stays the same size from the first
-row to the last only with the change to OOPS that frees each Snapshot's camera frame
-with the Snapshot (SETI/rms-oops pull request 252); without it, each Snapshot leaves a
-few kilobytes behind. An error in a row is raised when the iteration reaches it, after the
-rows before it. To build every row at once, pass the iterator to ``list()``:
+row to the last when OOPS releases each row's camera frame along with its Snapshot; an
+OOPS that keeps those frames adds a few kilobytes for each row. An error in a row is
+raised when the iteration reaches it, after the rows before it. To build every row at
+once, pass the iterator to ``list()``:
 
 .. code-block:: python
 
@@ -29,8 +29,10 @@ rows before it. To build every row at once, pass the iterator to ``list()``:
 
    snapshots = list(VoyagerISS.from_index(index))
 
-An error in a row ends the iteration there. To reach the rows that follow, leave that
-row out with the ``filter`` argument, described below.
+An error in a row ends the iteration there. The ``filter`` argument, described below,
+can leave out a row whose Snapshot would raise, but it cannot avoid an error in reading
+or pairing the rows of the tables, because the rows are filtered only after they have
+been read and paired.
 
 The index and its supplement
 ============================
@@ -64,8 +66,10 @@ host reads the two tables in step and merges each index row with the supplement 
 the same position. As it does, it checks that the two rows give the same file. If they
 do not, the iteration raises :exc:`~oops.host.HostIndexError` at that row, giving the row
 number, counted from 0, the file that each table gives, and both tables. The same error
-is raised if the supplement ends before the index, and, after the last row, if the
-supplement has more rows than the index.
+is raised at a row where the two tables give different values of ``PRODUCT_ID`` or
+``VOLUME_NAME``, the other columns they share; if the supplement ends before the index;
+and, after the last row, if the supplement has more rows than the index. A table that
+lacks the column ``FILE_SPECIFICATION_NAME`` raises it when the call is made.
 
 The labels of the raw image indexes give the ``EXPOSURE_DURATION`` column a width of 7
 bytes, while its format and the table itself give it 9. Read as the labels say, an

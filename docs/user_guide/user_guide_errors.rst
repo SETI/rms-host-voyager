@@ -71,19 +71,20 @@ and ``filter`` are still made, as their entries say, and so are those of each ro
     - ``supplement`` is None or an empty string, and ``row_dicts`` is not given.
     - A table cannot be read as an index, because its label lacks the table it points
       to.
+    - A table lacks the column ``FILE_SPECIFICATION_NAME``.
 
     During the iteration:
 
     - At a row where the index row and the supplement row in the same position give
-      different files.
+      different files, or different values of ``PRODUCT_ID`` or ``VOLUME_NAME``.
     - At the row where the supplement ends before the index.
     - After the last row of a table that holds fewer rows than its label says. Every
       row that the table holds is given first.
     - At a row that is longer than its label says. The rows are read 100 at a time, and
       none of the 100 read with that row is given.
 
-    After the last row: the supplement has more rows than the index, or a table holds
-    more rows than its label says.
+    After the last row: a table holds more rows than its label says, or the supplement
+    has more rows than the index.
 
     The tables are checked only for these errors. A value that cannot be read as the
     number its column describes gives a warning, and the row keeps the value as text.
@@ -94,26 +95,25 @@ and ``filter`` are still made, as their entries say, and so are those of each ro
     a letter. This error is raised when the iteration reaches that row.
 
 :exc:`FileNotFoundError`
-    The label of the supplemental index does not exist, when the call is made; or a
-    table file does not exist, when the iteration starts.
+    The PDS3 label of the supplement does not exist, when the call is made; or a table
+    file does not exist, when the iteration starts.
 
 :exc:`~oops.host.HostFormatError`
     A row lacks the exposure, the camera, or the spacecraft; both the time and the clock
     count; or, unless ``frame`` is given, the clock stop count. The message gives the
-    missing item and the image file. This error is raised when the iteration reaches that
-    row.
+    item and the image file. This error is raised when the iteration reaches that row.
 
 :exc:`oops.OopsSpiceError`
     A row lacks a time, and the clock kernel cannot convert its clock count. This error
     is raised when the iteration reaches that row.
 
 :exc:`TypeError`
-    A keyword argument is not one that the method accepts, as Python reports an
-    unexpected keyword argument.
+    A keyword argument is not one that the method accepts, when the call is made. This
+    is Python's own error for an unexpected keyword argument.
 
 :exc:`~oops.OopsTypeError`
-    When the iteration reaches a row, a range in ``filter`` cannot be compared with that
-    row's value.
+    A range in ``filter`` cannot be compared with a row's value. This error is raised
+    when the iteration reaches that row.
 
 :exc:`~oops.OopsValueError`
     ``select`` is not None, ``filter`` gives a column that neither table has, or
@@ -130,10 +130,13 @@ and ``filter`` are still made, as their entries say, and so are those of each ro
     The file is not a Voyager ISS index.
 
 :exc:`OSError`
-    The label of the index or of a named supplement cannot be read.
+    The PDS3 label of the index or of a named supplement does not exist or cannot be
+    read.
 
-The method does not check the pointing. An image whose pointing the SPICE kernels cannot
-supply raises :exc:`oops.OopsSpiceError` only when its Snapshot's frame is evaluated.
-
-An error raised for one row ends the iteration there. :doc:`user_guide_index` describes
-how to leave such a row out.
+The iteration ends at the first row that raises, after the Snapshots of the rows before
+it. The ``filter`` argument (see :doc:`user_guide_index`) can leave out a row whose
+Snapshot would raise, but it cannot avoid an error in reading or pairing the rows of the
+tables, because the rows are filtered only after they have been read and paired.
+Missing pointing never stops the iteration: the host does not check the pointing of a
+row, and the Snapshot of a row without pointing raises :exc:`oops.OopsSpiceError` only
+when its frame is evaluated.

@@ -975,8 +975,9 @@ class VoyagerISS(oops.Host):
                 PDS label of the supplemental index, whose columns are merged into each
                 row; a raw image index needs its supplement. Its rows must list the same
                 files as the index's, in the same order, as every VGISS supplement does:
-                each index row is merged with the supplement row in the same position.
-                Where both tables give a column, the index value is kept. The default,
+                each index row is merged with the supplement row in the same position,
+                which must give the same PRODUCT_ID and VOLUME_NAME. Where both tables
+                give a column, the index value is kept. The default,
                 `oops.Host.SUPPLEMENT`, reads the file in the directory of `filepath`
                 whose name matches except that "_raw_image_index" is replaced by
                 "_supplemental_index" in upper or lower case.
@@ -1065,10 +1066,12 @@ class VoyagerISS(oops.Host):
             "<holdings>/metadata/VGISS_6xxx/VGISS_6109/", the volume is
             "<holdings>/volumes/VGISS_6xxx/VGISS_6109"; for an index anywhere else, it is
             the directory VOLUME_NAME beside the index. Reading an index never creates
-            a directory. A row that raises an error ends the iteration, so the rows
-            after it are reached only with a `filter` that leaves it out. The pointing
-            is not checked: if `frame` is not given and the SPICE kernels cannot supply
-            an image's pointing, evaluating its frame raises :class:`oops.OopsSpiceError`,
+            a directory. The iteration stops at the first row that raises an error.
+            `filter` can leave out a row whose Snapshot would raise, but it cannot avoid
+            an error in reading or pairing the rows of the tables, because the rows are
+            filtered only after they have been read and paired. The pointing is not
+            checked: if `frame` is not given and the SPICE kernels cannot supply an
+            image's pointing, evaluating its frame raises :class:`oops.OopsSpiceError`,
             as :meth:`from_file` describes.
 
             The tables are checked only for the errors listed below. If the table reader
@@ -1100,21 +1103,22 @@ class VoyagerISS(oops.Host):
             oops.host.HostIndexError: When the call is made: if `supplement` is None or
                 an empty string while `row_dicts` is not given; if `supplement` is
                 `oops.Host.SUPPLEMENT` and the name of `filepath` lacks
-                "_raw_image_index", also when `row_dicts` is given; or if a label does
-                not describe a table that can be read, as when it lacks the table it
-                points to. During the iteration, only if `row_dicts` is not given,
-                counting rows from 0: at a row where the index row and the supplement row
-                in the same position give different files; at the row where the
-                supplement ends before the index; after the last row a table holds, if it
-                holds fewer rows than its label says; at the first of the 100 rows read
-                with a row longer than the label's row length, none of which is yielded;
-                and after the last row, if the supplement has more rows than the index or
-                a table more rows than its label says.
+                "_raw_image_index", also when `row_dicts` is given; if a label does not
+                describe a table that can be read, as when it lacks the table it points
+                to; or if a table lacks the column FILE_SPECIFICATION_NAME. During the
+                iteration, only if `row_dicts` is not given, counting rows from 0: at a
+                row where the index row and the supplement row in the same position give
+                different files, or different values of PRODUCT_ID or VOLUME_NAME; at the
+                row where the supplement ends before the index; after the last row a
+                table holds, if it holds fewer rows than its label says; at the first of
+                the 100 rows read with a row longer than the label's row length, none of
+                which is yielded; and after the last row, if a table holds more rows than
+                its label says or the supplement more rows than the index.
             oops.host.PdsHostError: If the label of `filepath` or of the supplement cannot
                 be parsed.
             oops.host.WrongHostError: If `filepath` is not a Voyager ISS index.
             OSError: If the label of `filepath` or of a `supplement` that is specified
-                cannot be read.
+                does not exist or cannot be read.
         """
 
         oops.Host._check_select(select, unit='row of a Voyager ISS raw image index')
