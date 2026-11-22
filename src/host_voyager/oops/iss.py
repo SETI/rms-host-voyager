@@ -463,11 +463,11 @@ class VoyagerISS(oops.Host):
     NAME = 'Voyager ISS'
 
     # Every supplement lists the same images in the same order as its raw image index, so
-    # the rows are paired by position. A survey of all 182 raw image indexes in the
-    # holdings (2026-11-19: the 91 in metadata/VGISS_[5-8]xxx, the cumulative *999
-    # indexes included, and their copies in metadata/VGISS_[5-8]xxx_v1.0), reading the
-    # VOLUME_NAME, FILE_SPECIFICATION_NAME, and PRODUCT_ID columns of both tables, found
-    # every pair of tables equal in length and in agreement on every row, 306,608 rows.
+    # the rows are paired by position. A survey of all 91 raw image indexes in the
+    # holdings (2026-11-19: metadata/VGISS_[5-8]xxx, the cumulative *999 indexes
+    # included), reading the VOLUME_NAME, FILE_SPECIFICATION_NAME, and PRODUCT_ID columns
+    # of both tables, found every pair of tables equal in length and in agreement on every
+    # row, 153,304 rows.
     MERGE_SUPPLEMENT_BY_FILE = False
 
     _FOVS = {}
