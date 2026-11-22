@@ -102,11 +102,12 @@ class _Voyager:
                 and its moons. None or 0 means all.
             asof (str, optional): A date in ISO format, which every database query
                 receives as the date-time that :meth:`_format_asof` returns. Each kernel
-                is chosen from those released before it, the leap seconds kernel
-                included. A query of which every kernel was released on or after the
-                date silently uses the kernel it would choose without a date; a set of C
-                kernels keeps only those released before the date, so for any date up
-                to and including 2007-06-05 the cameras' pointing is left out. The C
+                is chosen from those released no later than the start (00:00) of that
+                date, the leap seconds kernel included. A query of which every kernel
+                was released after the start of the date silently uses the kernel it
+                would choose without a date; a set of C kernels keeps only those
+                released by the start of the date, so for any date up to and including
+                2007-06-05 the cameras' pointing is left out. The C
                 kernels never fall back, and ValueError is raised instead. The merged
                 cruise trajectories are left out for any date up to and including
                 2013-01-25. None to choose the newest kernels.
@@ -114,8 +115,8 @@ class _Voyager:
                 otherwise.
 
         Raises:
-            ValueError: If none of a spacecraft's C kernels was released before `asof`,
-                as for any date before 1990-04-16.
+            ValueError: If none of a spacecraft's C kernels was released by the start
+                of `asof`, as for any date before 1990-04-16.
         """
 
         if _Voyager.initialized:
@@ -210,9 +211,10 @@ class _Voyager:
             instruments (list[str], optional): The names of the instruments whose kernels
                 to load. On the first call, 'ISS' is always included.
             asof (str, optional): A date or date-time in ISO format. Each kernel is
-                chosen from those released before it, or, where every kernel that the
-                query could choose was released on or after it, the kernel chosen
-                without a date is used, silently. None to load the newest.
+                chosen from those released no later than it, at 00:00 for a date
+                without a time, or, where every kernel that the query could choose was
+                released after it, the kernel chosen without a date is used, silently.
+                None to load the newest.
         """
 
         # Copy so that the caller's list is never modified
