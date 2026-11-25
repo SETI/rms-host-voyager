@@ -127,9 +127,9 @@ nitpick_ignore_regex = [
     # Napoleon splits a type such as "(bool, optional)" on the comma and looks up each
     # piece, so the trailing "optional" of every optional parameter arrives here.
     (r'py:class', r'optional'),
-    # oops.OopsSpiceError is new in rms-oops 0.5.0, which the published rms-oops
-    # documentation does not describe yet; remove this entry once it does.
-    (r'py:(class|exc)', r'oops\.OopsSpiceError'),
+    # oops.host.is_pds3_null arrives with the rms-oops host contract, which the published
+    # rms-oops documentation does not describe yet; remove this entry once it does.
+    (r'py:func', r'oops\.host\.is_pds3_null'),
 ]
 
 # MyST-Parser settings
@@ -162,6 +162,8 @@ _SHORT_NAMES = {
     'Scalar'              : 'polymath.Scalar',
     'OopsValueError'      : 'oops.OopsValueError',
     'oops.LightSource'    : 'oops.lightsource.LightSource',
+    'oops.Host'           : 'oops.host.Host',
+    'oops.Host.from_file' : 'oops.host.Host.from_file',
     'oops.Host.from_index': 'oops.host.Host.from_index',
 }
 

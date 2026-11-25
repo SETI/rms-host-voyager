@@ -530,17 +530,7 @@ class VoyagerISS(oops.Host):
 
         Each item has one fixed source, the same for every image: the label wins every
         item, and a header value fills in only where the label lacks the item or gives a
-        PDS3 null text for it. Surveys of the VICAR headers of all 76,652 VGISS raw images
-        against the labels, and of about 11,000 products read directly, found the header
-        wrong where the two differ (#14 lists every difference): its FDS count is another
-        on 63 images, for which the C kernels hold the pointing at the label's count; its
-        SCET is asterisks or garbled on 93, and is to the second where the label's time
-        is to 1/100 s; its exposure is wrong on 90 long exposures of 15-672 s, written as
-        5 or 240 ms; and its 8-character target differs on 1,936, the label naming the
-        curated or more precise target. The label also wins where it truncates the
-        exposure: 137 labels, all in VGISS_5xxx, give 0.0 s for an exposure under 10 ms,
-        and those products get a zero exposure from a label, while the image file alone
-        gives the header's value. No per-image test is made.
+        PDS3 null text for it.
 
         Parameters:
             label_dict (dict | None): The PDS3 label as a dictionary; None if it was not
@@ -552,6 +542,18 @@ class VoyagerISS(oops.Host):
             dict: The merged metadata, as :meth:`from_file` describes `dict`.
         """
 
+        # The label wins every item. Surveys of the VICAR headers of all 76,652 VGISS raw
+        # images against the labels, and of about 11,000 products read directly, found
+        # the header wrong where the two differ: its FDS count is another on 63 images,
+        # for which the C kernels hold the pointing at the label's count; its SCET is
+        # asterisks or garbled on 93, and is to the second where the label's time is to
+        # 1/100 s; its exposure is wrong on 90 long exposures of 15-672 s, written as 5 or
+        # 240 ms; and its 8-character target differs on 1,936, the label naming the
+        # curated or more precise target. The label also wins where it truncates the
+        # exposure: 137 labels, all in VGISS_5xxx, give 0.0 s for an exposure under
+        # 10 ms, so those products get a zero exposure from a label, while the image file
+        # alone gives the header's value. No per-image test is made. The issue that lists
+        # every difference stays open (#14).
         merged = {}
         if header is not None:
             merged = _without_nulls({key: value for (key, value)
