@@ -267,7 +267,8 @@ def test_used_kernels_all_planets(fake_spicedb: FakeSpiceDB) -> None:
     """With return_all_planets, every planet is included."""
 
     bodies = _used_kwargs(fake_spicedb, return_all_planets=True)['bodies']
-    assert bodies[:6] == [1, 199, 2, 299, 3, 399]
+    assert [body for body in bodies if body < 10 or body % 100 == 99] == [
+        1, 199, 2, 299, 3, 399, 4, 499, 5, 599, 6, 699, 7, 799, 8, 899]
 
 
 def test_used_kernels_passes_the_query(fake_spicedb: FakeSpiceDB) -> None:

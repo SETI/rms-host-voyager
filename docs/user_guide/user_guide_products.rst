@@ -44,8 +44,10 @@ The volumes also hold the reseau location and geometric correction tables of eac
 in files ending ``_RESLOC`` and ``_GEOMA``. These are tables, and the host does not read
 them.
 
-Every image becomes an OOPS :class:`~oops.observation.Snapshot`, with the image in its
-``data`` subfield and the image's lines and samples as its *v* and *u* axes.
+Every image becomes an OOPS :class:`~oops.observation.Snapshot`, with the image's lines
+and samples as its *v* and *u* axes. An image read from its file holds the image array in
+its ``data`` subfield, except in an astrometry read; a row of an index has no ``data``
+(see :doc:`user_guide_index`).
 
 Fields of view
 ==============
@@ -67,8 +69,9 @@ When the PDS3 label is read, ``if_scale`` is the ``REFLECTANCE_SCALING_FACTOR`` 
 label's ``IMAGE`` object. The labels of RAW and CLEANED products give an approximate
 factor, and those of CALIB and GEOMED products an accurate one.
 
-When only the image file is read, or the label lacks one, ``if_scale`` comes from
-the VICAR header. The header of a CALIB or GEOMED product has a line of the form ``FOR
+When the label is not read or gives no factor, and the image file is read, ``if_scale``
+comes from the VICAR header. An astrometry read of a label does not read the image file,
+so it has no ``if_scale`` when the label gives no factor. The header of a CALIB or GEOMED product has a line of the form ``FOR
 (I/F)*10000., MULTIPLY DN VALUE BY x``, and the factor is *x* divided by 10000. For a
 Voyager 1 image, it is then corrected as the archive's tutorial
 (``DOCUMENT/TUTORIAL.TXT`` on the volumes) documents, because the calibration software
