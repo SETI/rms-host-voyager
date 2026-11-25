@@ -55,8 +55,9 @@ Fields of view
 The product type decides the field of view. A GEOMED image has been resampled to remove
 the camera's geometric distortion, and its field of view is 1000 by 1000 pixels. Every
 other product keeps the camera's 800 by 800 pixels. This holds for every read, an
-astrometry read included. Every field of view is flat: the host does not model the
-distortion of the raw image.
+astrometry read included. A read that reads the image array refuses an array of any
+other size (see :doc:`user_guide_errors`). Every field of view is flat: the host does
+not model the distortion of the raw image.
 
 Calibration
 ===========

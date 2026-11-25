@@ -68,8 +68,9 @@ stubs described below.
   label, so the host keeps oops's default `_correct_label_text()`. The array always
   comes from the VICAR file. A failure to read or interpret a file becomes a host error
   naming the file: a header that cannot be parsed or data cut short, an image of several
-  bands, and an array whose shape differs from its label. Index and supplement rows get
-  no checks.
+  bands, an array whose shape differs from its label, and an array whose shape differs
+  from the host's FOV (checked in `_make_snapshot()`). Index and supplement rows get no
+  checks.
 - `_merge()` merges the two labels: the PDS3 label wins every item, and the header fills
   in only where the label lacks an item or gives a PDS3 null text. Its docstring gives
   the evidence and cites the label-differences issue. Null texts are dropped from `dict`

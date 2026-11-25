@@ -15,10 +15,10 @@ import numpy as np
 import oops
 import pytest
 from conftest import (CLOCK_COUNT, GEOMED_VICAR, HEADER_LINES, IF_LINE, INDEX,
-                      INDEX_ROWS, LINE_SAMPLES, LINES,
+                      INDEX_ROWS, LINES,
                       RAW_LABEL, SPICE_FRAME_ANGLE, STOP_TIME, SUPPLEMENT, FakeSpice,
-                      FakeSpiceDB, camera_matrix, fake_scencd, fake_sct2e, rotation,
-                      write_image,
+                      FakeSpiceDB, camera_matrix, fake_scencd, fake_sct2e, image_array,
+                      rotation, write_image,
                       write_label, write_product)
 from filecache import FCPath
 from vicar import VicarImage, VicarLabel
@@ -67,7 +67,7 @@ def read_image(directory: pathlib.Path, name: str = 'C3450201_RAW', **kwargs: An
     """The Snapshot of a synthetic image file, read from the file alone; keywords of
     :func:`write_image` change the file, and every other keyword goes to from_file."""
 
-    image_keys = {'header', 'tasks', 'if_line', 'bands'}
+    image_keys = {'header', 'tasks', 'if_line', 'bands', 'shape'}
     image = {key: kwargs.pop(key) for key in list(kwargs) if key in image_keys}
     path = write_image(directory / f'{name}.IMG', **image)
     return VoyagerISS.from_file(path, **kwargs)
@@ -247,8 +247,7 @@ def test_label_reads_the_image_data(tmp_path: pathlib.Path) -> None:
     """Given a label, the data come from the image file it names."""
 
     obs = read_label(tmp_path)
-    assert np.array_equal(obs.data, np.arange(LINES * LINE_SAMPLES).reshape(LINES,
-                                                                            LINE_SAMPLES))
+    assert np.array_equal(obs.data, image_array()[0])
 
 
 def test_label_reads_the_data_through_the_vicar_file(tmp_path: pathlib.Path) -> None:
@@ -470,9 +469,25 @@ def test_array_that_does_not_match_its_label(tmp_path: pathlib.Path) -> None:
 
     (label_path, image_path) = write_product(tmp_path, label={'lines': LINES + 1})
     with pytest.raises(oops.host.HostFormatError,
-                       match=f'^Voyager ISS image {esc(image_path)} holds a 4x6 array, where '
-                             f'its label {esc(label_path)} describes 5x6$'):
+                       match=f'^Voyager ISS image {esc(image_path)} holds a 800x800 array, '
+                             f'where its label {esc(label_path)} describes 801x800$'):
         VoyagerISS.from_file(label_path)
+
+
+@pytest.mark.parametrize(('tasks', 'shape', 'pixels'), [
+    ((), (1, 404), 800),                    # a table of one line
+    (('GEOMA',), (LINES, LINES), 1000),     # a GEOMED product of raw size
+], ids=['table', 'geomed'])
+def test_array_that_does_not_match_the_fov(tmp_path: pathlib.Path, tasks: tuple[str, ...],
+                                           shape: tuple[int, int], pixels: int) -> None:
+    """An array that does not have the shape of the field of view raises
+    HostFormatError naming the file."""
+
+    path = tmp_path / 'C3450201_RAW.IMG'
+    with pytest.raises(oops.host.HostFormatError,
+                       match=f'^Voyager ISS image {esc(path)} holds a {shape[0]}x{shape[1]} '
+                             f'array, where its field of view is {pixels}x{pixels}$'):
+        read_image(tmp_path, tasks=tasks, shape=shape)
 
 ##########################################################################################
 # from_file(): the PDS3 parse method

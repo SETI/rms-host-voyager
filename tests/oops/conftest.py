@@ -334,9 +334,10 @@ def body_path(monkeypatch: pytest.MonkeyPatch) -> oops.Path:
 # Synthetic products
 ##########################################################################################
 
-# The array of every synthetic image: LINES x LINE_SAMPLES
-LINES = 4
-LINE_SAMPLES = 6
+# The array of a synthetic image, LINES x LINE_SAMPLES, the raw field of view, unless a
+# test gives another shape
+LINES = 800
+LINE_SAMPLES = 800
 
 # The VICAR header lines of C3450201
 HEADER_LINES = {
@@ -370,19 +371,28 @@ LABEL_ITEMS = {
 }
 
 
+def image_array(shape: tuple[int, int] = (LINES, LINE_SAMPLES),
+                bands: int = 1) -> np.ndarray:
+    """The array of a synthetic image: unsigned bytes in each of `bands` bands of the
+    given shape, counting up from 0 and wrapping at 256."""
+
+    array: np.ndarray = (np.arange(bands * shape[0] * shape[1]) % 256).astype('uint8')
+    return array.reshape(bands, *shape)
+
+
 def write_image(path: pathlib.Path, *, header: dict[str, str | None] | None = None,
                 tasks: tuple[str, ...] = (), if_line: str | None = None,
-                bands: int = 1) -> pathlib.Path:
+                bands: int = 1,
+                shape: tuple[int, int] = (LINES, LINE_SAMPLES)) -> pathlib.Path:
     """Write a synthetic Voyager ISS VICAR image file.
 
     The header has the lines of HEADER_LINES, changed by `header`, in which None removes
     a line; then a history step for each of `tasks`, the last of which also gives the
-    I/F line `if_line` as LABEL3. The array is LINES x LINE_SAMPLES unsigned bytes in
-    each of `bands` bands, counting up from 0.
+    I/F line `if_line` as LABEL3. The array is :func:`image_array` of `shape` and
+    `bands`.
     """
 
-    array = np.arange(bands * LINES * LINE_SAMPLES, dtype='uint8')
-    image = VicarImage.from_array(array.reshape(bands, LINES, LINE_SAMPLES), strict=False)
+    image = VicarImage.from_array(image_array(shape, bands), strict=False)
     for (key, value) in (HEADER_LINES | (header or {})).items():
         if value is not None:
             image[key] = value

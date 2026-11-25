@@ -20,10 +20,12 @@ Reading an image file
 
 :exc:`~oops.host.HostFormatError`
     The image file's array does not have the number of lines and samples that its PDS3
-    label describes; no file read gives a clock count and the name of the image file does
-    not begin with one; or no file read gives a time and the clock count cannot be
-    placed in one partition of the clock (see :doc:`user_guide_geometry`). The message
-    names the file.
+    label describes; the array does not have the size of the field of view, 1000 by 1000
+    pixels for a GEOMED product and 800 by 800 for any other (see
+    :doc:`user_guide_products`), as when the file holds a table; no file read gives a
+    clock count and the name of the image file does not begin with one; or no file read
+    gives a time and the clock count cannot be placed in one partition of the clock (see
+    :doc:`user_guide_geometry`). The message names the file.
 
 :exc:`~oops.host.WrongHostError`
     The file is not a Voyager ISS image or label.

@@ -380,7 +380,8 @@ class VoyagerISS(oops.Host):
                 read gives a time and the count does not fall in exactly one clock
                 partition within the periods in which the spacecraft imaged its planets.
                 Also if the array of the image file does not have the shape that the
-                label describes.
+                label describes, or the shape of the field of view: 1000x1000 for a GEOMED
+                product and 800x800 for any other.
             oops.host.PdsHostError: If the PDS3 label cannot be parsed or lacks an IMAGE
                 pointer.
             oops.host.VicarHostError: If the VICAR file cannot be read: its header cannot
@@ -416,7 +417,9 @@ class VoyagerISS(oops.Host):
             'parallel'    : parallel,
         }
         label_scale = dict_.get('IMAGE', {}).get('REFLECTANCE_SCALING_FACTOR')
-        obs = VoyagerISS._make_snapshot(dict_, files.image_path, label_scale=label_scale,
+        shape = None if files.data is None else files.data.shape
+        obs = VoyagerISS._make_snapshot(dict_, files.image_path, shape=shape,
+                                        label_scale=label_scale,
                                         header_scale=header_scale,
                                         return_all_planets=return_all_planets,
                                         overrides=overrides)
@@ -879,7 +882,7 @@ class VoyagerISS(oops.Host):
         return None
 
     @staticmethod
-    def _make_snapshot(items, name, *, label_scale=None, header_scale=None,
+    def _make_snapshot(items, name, *, shape=None, label_scale=None, header_scale=None,
                        return_all_planets=False, overrides):
         """A Snapshot built from the merged metadata of a product or the values of a row.
 
@@ -887,6 +890,8 @@ class VoyagerISS(oops.Host):
             items (dict[str, Any]): The metadata, without null values.
             name (FCPath | str): The image file, or for an index row its relative path,
                 for the clock count in its name and for messages.
+            shape (tuple[int, int], optional): The shape of the image array, lines by
+                samples, when it was read.
             label_scale (float, optional): The label's REFLECTANCE_SCALING_FACTOR.
             header_scale (float, optional): The VICAR header's I/F factor, before the
                 Voyager 1 corrections.
@@ -898,8 +903,9 @@ class VoyagerISS(oops.Host):
             `header_dict` and the subfields that name its files.
 
         Raises:
-            oops.host.HostFormatError: If no clock count is known, or if no time is known
-                and the count does not fall in one partition within the imaging periods.
+            oops.host.HostFormatError: If `shape` differs from the shape of the field of
+                view, if no clock count is known, or if no time is known and the count
+                does not fall in one partition within the imaging periods.
         """
 
         vgr = int(items['INSTRUMENT_HOST_NAME'][-1])
@@ -907,6 +913,16 @@ class VoyagerISS(oops.Host):
             camera = items['INSTRUMENT_ID'][-1] + 'AC'
         else:                                   # "NARROW ANGLE CAMERA" in an index
             camera = items['INSTRUMENT_NAME'][0] + 'AC'
+        geomed = items.get('PRODUCT_TYPE') == _GEOMED
+        fov = VoyagerISS._FOVS[camera, geomed]
+
+        # The FOV's shape is (samples, lines), the array's (lines, samples)
+        fov_shape = tuple(int(n) for n in fov.uv_shape.vals[::-1])
+        if shape is not None and shape != fov_shape:
+            raise oops.host.HostFormatError(
+                f'Voyager ISS image {name} holds a {shape[0]}x{shape[1]} array, where '
+                f'its field of view is {fov_shape[0]}x{fov_shape[1]}')
+
         count = VoyagerISS._clock_count(items, name)
         if count is None:
             raise oops.host.HostFormatError(f'Voyager ISS image {name} has no '
@@ -928,10 +944,9 @@ class VoyagerISS(oops.Host):
                 if_scale *= _V1_FILTER_IF_FACTORS.get(filter_, 1.)
 
         (frame, frozen) = VoyagerISS._camera_frame(vgr, camera, count)
-        geomed = items.get('PRODUCT_TYPE') == _GEOMED
         params = {
             'cadence'     : oops.cadence.SnapCadence(tstop - texp, texp),
-            'fov'         : VoyagerISS._FOVS[camera, geomed],
+            'fov'         : fov,
             'path'        : _Voyager.PATH_IDS[vgr],
             'frame'       : frame,
             'lightsource' : 'SUN',
