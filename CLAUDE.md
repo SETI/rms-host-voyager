@@ -42,10 +42,12 @@ stubs described below.
 - `docs/conf.py` resolves the short class names in docstrings (`FCPath`, `Observation`,
   ...) through intersphinx with `_SHORT_NAMES`. Add a name there when a nitpicky build
   reports a class from another RMS package.
-- Tests never touch SPICE kernels, spicedb or the archive. The host tests are in
+- Tests never touch SPICE kernels, the spicedb database or the archive. The host tests are in
   `tests/oops/`, whose `conftest.py` replaces SPICE with fakes for every test (a fake
-  FDS clock, C-kernel records and a stand-in for the camera's `SpiceFrame`) and writes
-  small synthetic products: a VICAR image file and its PDS3 label. It also copies the
+  FDS clock, C-kernel records and a stand-in for the camera's `SpiceFrame`; spicedb's own
+  `furnish_kernels` runs over recording fakes of `cspyce.furnsh` and `cspyce.unload`) and
+  writes small synthetic products: a VICAR image file of the raw 800x800 FOV and its
+  PDS3 label. It also copies the
   oops Path and Frame registries, caches, and per-class waypoint and wayframe pools for
   each test, because oops gives a path or frame the ID of an earlier one defined in
   exactly the same way. `test_files/` holds cut-down copies of real VGISS_6109 files:
@@ -63,6 +65,9 @@ stubs described below.
   idempotent, and `from_file()` and `from_index()` call it. Kernels are furnished
   through `spicedb`; NAIF's merged cruise trajectories (`CRUISE_SPKS`) are furnished
   first, by fixed path, so that the encounter and planetary kernels take precedence.
+  When a cruise file is new, every SPK file furnished before them is reloaded file by
+  file in `spicedb.FURNISHED_ABSPATHS` order, never through its spicedb records, which
+  can name several files.
 - Every label and image file is read through `VoyagerISS._read_files()`. A label is
   parsed with the strict method (`_PDS3_DEFAULTS`), which reads every current VGISS
   label, so the host keeps oops's default `_correct_label_text()`. The array always

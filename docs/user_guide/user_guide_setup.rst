@@ -45,7 +45,9 @@ whole mission. These two files are read from fixed paths under ``Voyager/SPK`` i
 ``SPICE_PATH`` directory, ``voyager_1.ST+1991_a54418u.merged.bsp`` and
 ``voyager_2.ST+1992_m05208u.merged.bsp``, and need not be in the database. Where the
 encounter and planetary ephemerides cover a time, they take precedence over the merged
-trajectories.
+trajectories. So do ephemerides that were loaded before the host started, such as those
+of another mission's host: the host loads them again after the merged trajectories,
+keeping their order.
 
 Registering the host
 ====================

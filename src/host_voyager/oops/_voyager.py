@@ -13,7 +13,6 @@ import spicedb
 import cspyce
 import oops
 
-from filecache import FCPath
 from oops.body import Body
 
 # The planetary encounters, each running from its start time until the next one begins.
@@ -149,9 +148,10 @@ class _Voyager:
 
         The files need not be in the spicedb database. Only their spacecraft segments
         are recorded, so :meth:`used_kernels` names them for the spacecraft alone, not
-        for the planet barycenters they also hold. Every SP kernel furnished before them
-        is furnished again after them, in the same order, so that it keeps precedence
-        over them.
+        for the planet barycenters they also hold. When at least one of them is new,
+        every SP kernel file furnished before them is furnished again after them, in its
+        own load order, so that it keeps precedence over them. When both were furnished
+        already, no file is furnished again.
 
         Parameters:
             asof (str | None): An ISO date or date-time; a file released after it is
@@ -178,12 +178,20 @@ class _Voyager:
 
         # spicedb skips a kernel that is already furnished, so the planetary kernels of a
         # Solar System that another host defined first would otherwise yield to the
-        # planet barycenters in these files, even outside the Voyager mission
-        earlier = [info for abspath in spicedb.FURNISHED_ABSPATHS['SPK']
-                   for info in spicedb.FURNISHED_INFO[FCPath(abspath).name]]
+        # planet barycenters in these files, even outside the Voyager mission. The files
+        # are reloaded one at a time, in spicedb's list of the furnished files, rather
+        # than through their spicedb records: one record can name several files, such as
+        # an encounter's planetary and spacecraft files, and furnishing it again would
+        # move both after a file loaded between them (issue 40).
+        furnished = spicedb.FURNISHED_ABSPATHS['SPK']
+        earlier = list(furnished)
         spicedb.furnish_kernels(kernels, fast=True)
-        if earlier:
-            spicedb.furnish_kernels(earlier, fast=False)
+        if len(furnished) > len(earlier):       # a cruise SPK was added at the end
+            for abspath in earlier:
+                cspyce.unload(abspath)
+                cspyce.furnsh(abspath)
+                furnished.remove(abspath)
+                furnished.append(abspath)
 
     @staticmethod
     def reset():

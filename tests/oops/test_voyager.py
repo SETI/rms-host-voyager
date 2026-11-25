@@ -3,12 +3,12 @@
 ##########################################################################################
 """Tests for the Voyager mission support, host_voyager.oops._voyager."""
 
-import types
 from typing import Any
 
 import julian
 import oops
 import pytest
+import spicedb
 from conftest import CLOCK_COUNT, FakePrefix, FakeSpice, FakeSpiceDB, fake_scencd
 from oops.body import Body
 
@@ -134,19 +134,62 @@ def test_initialize_furnishes_the_cruise_spks_first(fake_spicedb: FakeSpiceDB) -
     assert names.index('furnish_kernels') < names.index('furnish_spk')
 
 
-def test_initialize_raises_earlier_spks_above_the_cruise_spks(
-        fake_spicedb: FakeSpiceDB) -> None:
-    """SP kernels furnished before the cruise ones are furnished again after them, in
-    their load order, so that they keep precedence over them."""
+def spk(name: str, filespec: str, spice_id: int) -> spicedb.KernelInfo:
+    """A spicedb record of an SP kernel; `filespec` may name several files, separated by
+    commas."""
 
-    de440 = types.SimpleNamespace(spice_id=10, filespec='General/SPK/de440.bsp',
-                                  start_time='1950-01-01', stop_time='2050-01-01')
-    fake_spicedb.furnished_spks.append('/local/General/SPK/de440.bsp')
-    fake_spicedb.furnished_info['de440.bsp'] = [de440]
+    return spicedb.KernelInfo([name, None, 'SPK', filespec, '1950-01-01T00:00:00',
+                               '2050-01-01T00:00:00', '2020-01-01', spice_id, 100, None])
+
+
+# Two planetary files and the spacecraft file of an encounter, whose spicedb record names
+# both the encounter's planetary file and its spacecraft file
+SAT286 = 'Saturn/SPK/old/sat286.bsp'
+SAT441 = 'Saturn/SPK/sat441.bsp'
+VGR1_SAT286 = 'Voyager/SPK/old/vgr1_sat286.bsp'
+EARLIER = [SAT286, SAT441, VGR1_SAT286]
+
+
+def furnish_earlier_spks() -> None:
+    """Furnish SAT286, SAT441 and the encounter record of SAT286 and VGR1_SAT286, so that
+    SAT441 lies between the two files of one record."""
+
+    spicedb.furnish_kernels([spk('SAT286', SAT286, 699)])
+    spicedb.furnish_kernels([spk('SAT441', SAT441, 699)])
+    spicedb.furnish_kernels([spk('VG1-SPK-SAT', f'{SAT286},{VGR1_SAT286}', -31)])
+
+
+def test_initialize_raises_earlier_spks_above_the_cruise_spks(
+        fake_spice: FakeSpice) -> None:
+    """SP kernel files furnished before the cruise ones are furnished again after them, in
+    their own load order, so that they keep precedence over them, also where another file
+    was furnished between two files of one record."""
+
+    furnish_earlier_spks()
     _Voyager.initialize()
-    (_, (args, kwargs)) = fake_spicedb.named('furnish_kernels')
-    assert kwargs == {'fast': False}
-    assert [filespec for (_, filespec, _, _) in args[0]] == ['General/SPK/de440.bsp']
+    loaded = [path for (action, path) in fake_spice.loads if action == 'furnsh']
+    assert loaded[-3:] == [FakePrefix.ROOT / filespec for filespec in EARLIER]
+
+
+def test_initialize_keeps_the_spicedb_load_order(fake_spicedb: FakeSpiceDB) -> None:
+    """spicedb's list of the furnished SP kernels follows the order in which they were
+    loaded."""
+
+    furnish_earlier_spks()
+    _Voyager.initialize()
+    assert fake_spicedb.furnished_spks == [FakePrefix.ROOT / filespec for filespec
+                                           in [CRUISE_1, CRUISE_2, *EARLIER]]
+
+
+def test_initialize_replays_nothing_without_a_new_cruise_spk(
+        fake_spice: FakeSpice) -> None:
+    """When both cruise files are already furnished, no file is furnished again."""
+
+    spicedb.furnish_kernels([spk('CRUISE-1', CRUISE_1, -31), spk('CRUISE-2', CRUISE_2, -32),
+                             spk('SAT441', SAT441, 699)])
+    fake_spice.loads.clear()
+    _Voyager.initialize()
+    assert fake_spice.loads == []
 
 
 @pytest.mark.parametrize(('asof', 'furnished'), [

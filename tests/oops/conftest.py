@@ -119,10 +119,14 @@ def camera_matrix(count: str, partition: int = 2) -> np.ndarray:
 class FakeSpiceDB:
     """Records every spicedb call and returns configurable results.
 
+    `furnish_kernels` is the real function of spicedb, which keeps its own records of the
+    furnished files, with :class:`FakePrefix` for the file cache and the cspyce calls
+    that load and unload a kernel replaced by :func:`fake_spice`.
+
     Attributes:
         calls (list[tuple[str, tuple, dict]]): Each call as (name, args, kwargs).
         used (list[str]): Returned by `used_basenames`.
-        furnished_spks (list[str]): The local paths of the SP kernels already furnished,
+        furnished_spks (list[pathlib.Path]): The local paths of the SP kernels furnished,
             in load order, as `FURNISHED_ABSPATHS['SPK']`.
         furnished_info (dict[str, list]): The kernel records of each furnished file,
             keyed by its basename, as `FURNISHED_INFO`.
@@ -130,7 +134,7 @@ class FakeSpiceDB:
 
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = field(default_factory=list)
     used: list[str] = field(default_factory=lambda: ['vg1_issna_v02.ti', 'vg100019.tsc'])
-    furnished_spks: list[str] = field(default_factory=list)
+    furnished_spks: list[pathlib.Path] = field(default_factory=list)
     furnished_info: dict[str, list[Any]] = field(default_factory=dict)
 
     def _record(self, func: str, /, *args: Any, **kwargs: Any) -> None:
@@ -167,19 +171,29 @@ class FakeSpiceDB:
         return FakePrefix()
 
     def furnish_kernels(self, kernels: list[Any], **kwargs: Any) -> list[str]:
-        """Record each kernel as its (spice_id, filespec, start_time, stop_time)."""
+        """Record each kernel as its (spice_id, filespec, start_time, stop_time), then
+        furnish them with spicedb's own function."""
 
         self._record('furnish_kernels', [(k.spice_id, k.filespec, k.start_time,
                                           k.stop_time) for k in kernels], **kwargs)
-        return []
+        names: list[str] = _FURNISH_KERNELS(kernels, **kwargs)
+        return names
+
+
+# spicedb's own furnish_kernels, before the fixture replaces it
+_FURNISH_KERNELS = spicedb.furnish_kernels
 
 
 class FakePrefix:
-    """The SPICE file cache prefix, retrieving each file to a fake local path."""
+    """The SPICE file cache prefix, retrieving each file, or each of a list of files, to
+    a fake local path."""
 
     ROOT = pathlib.Path('/fake/SPICE')
 
-    def retrieve(self, filespec: str) -> pathlib.Path:
+    def retrieve(self, filespec: str | list[str],
+                 **kwargs: Any) -> pathlib.Path | list[pathlib.Path]:
+        if isinstance(filespec, list):
+            return [self.ROOT / spec for spec in filespec]
         return self.ROOT / filespec
 
 
@@ -202,6 +216,8 @@ class FakeSpice:
         pxform (list[tuple[str, str]]): The (from, to) frames of each `cspyce.pxform`.
         spkcov (list[tuple[str, int]]): The (file, body) of each `cspyce.spkcov`.
         spice_frames (list[str]): The name given to each `SpiceFrame.get`.
+        loads (list[tuple[str, pathlib.Path]]): Each `cspyce.unload` and `cspyce.furnsh`,
+            as ("unload" or "furnsh", the kernel's local path).
     """
 
     leap_seconds: int = 0
@@ -213,17 +229,21 @@ class FakeSpice:
     pxform: list[tuple[str, str]] = field(default_factory=list)
     spkcov: list[tuple[str, int]] = field(default_factory=list)
     spice_frames: list[str] = field(default_factory=list)
+    loads: list[tuple[str, pathlib.Path]] = field(default_factory=list)
 
 
 @pytest.fixture(autouse=True)
 def fake_spicedb(monkeypatch: pytest.MonkeyPatch) -> FakeSpiceDB:
-    """Replace every spicedb function the package calls with a recording fake."""
+    """Replace every spicedb function the package calls with a recording fake, and give
+    spicedb empty records of the furnished kernels."""
 
     fake = FakeSpiceDB()
     for name in _SPICEDB_FUNCTIONS:
         monkeypatch.setattr(spicedb, name, getattr(fake, name))
     monkeypatch.setattr(spicedb, 'FURNISHED_ABSPATHS', {'SPK': fake.furnished_spks})
     monkeypatch.setattr(spicedb, 'FURNISHED_INFO', fake.furnished_info)
+    monkeypatch.setattr(spicedb, 'FURNISHED_NAMES', {'SPK': []})
+    monkeypatch.setattr(spicedb, 'FURNISHED_FILENOS', {})
     return fake
 
 
@@ -231,7 +251,8 @@ def fake_spicedb(monkeypatch: pytest.MonkeyPatch) -> FakeSpiceDB:
 def fake_spice(monkeypatch: pytest.MonkeyPatch) -> FakeSpice:
     """Keep SPICE kernels out of every test and isolate the oops registries.
 
-    Loading the leap seconds and defining the Solar System only record the call, and a
+    Loading the leap seconds, defining the Solar System, and loading or unloading a
+    kernel through cspyce only record the call, and a
     SpicePath becomes a FixedPath near the Solar System barycenter. The spacecraft clock
     follows the fake FDS clock above, every count has a C-kernel record given by
     :func:`record_matrix` unless its ticks are in `missing`, and each camera is rotated
@@ -276,6 +297,12 @@ def fake_spice(monkeypatch: pytest.MonkeyPatch) -> FakeSpice:
         fake.spice_frames.append(name)
         return oops.frame.Cmatrix(rotation(2, SPICE_FRAME_ANGLE))
 
+    def furnsh(path: pathlib.Path) -> None:
+        fake.loads.append(('furnsh', path))
+
+    def unload(path: pathlib.Path) -> None:
+        fake.loads.append(('unload', path))
+
     monkeypatch.setattr(oops.spice, 'load_leap_seconds', load_leap_seconds)
     monkeypatch.setattr(oops.Body, 'define_solar_system', staticmethod(define_solar_system))
     monkeypatch.setattr(oops.path, 'SpicePath', spice_path)
@@ -286,6 +313,8 @@ def fake_spice(monkeypatch: pytest.MonkeyPatch) -> FakeSpice:
     monkeypatch.setattr(cspyce, 'ckgp', ckgp)
     monkeypatch.setattr(cspyce, 'pxform', pxform)
     monkeypatch.setattr(cspyce, 'spkcov', spkcov)
+    monkeypatch.setattr(cspyce, 'furnsh', furnsh)
+    monkeypatch.setattr(cspyce, 'unload', unload)
 
     monkeypatch.setattr(oops.Path, '_PATH_REGISTRY', dict(oops.Path._PATH_REGISTRY))
     monkeypatch.setattr(oops.Path, '_PATH_CACHE', dict(oops.Path._PATH_CACHE))
