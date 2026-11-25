@@ -9,13 +9,14 @@ description = "Voyager mission host (ISS) for the OOPS observation geometry tool
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "cspyce>=2.3.2",          # 2.3.2 is the first with Python 3.13 wheels
+  "cspyce>=2.3.2",
   "numpy>=2.0",
-  "rms-filecache>=2.0.3",
-  "rms-julian>=3.0.2",      # 3.0.2 drops pyparsing's deprecated camelCase API
-  "rms-oops>=0.4.0",        # 0.4.0 adds the oops.Host API; also provides spicedb
-  "rms-pdsparser>=2.3.0",   # 2.3.0 adds as_dict
-  "rms-vicar>=1.4.0",       # 1.4.0 adds as_dict
+  "rms-filecache>=3.0.0",
+  "rms-julian>=3.0.2",
+  "rms-oops @ git+https://github.com/SETI/rms-oops.git@rf_261124_host_contract",
+  "rms-pdsparser>=2.4.1",
+  "rms-pdstable>=1.2.0",
+  "rms-vicar>=1.4.0",
 ]
 license = "Apache-2.0"
 authors = [
@@ -59,7 +60,7 @@ dev = [
   "pytest>=7.0",
   "pytest-cov>=4.0",
   "pytest-xdist>=3.8.0",
-  "ruff>=0.8",
+  "ruff>=0.10",
   # "bandit[toml]>=1.8",
   "pyroma>=4.2",
   # "vulture>=2.14",
@@ -77,7 +78,7 @@ pythonpath = [
   "src"
 ]
 testpaths = ["tests"]
-addopts = ["-n", "auto", "--cov=src/host_voyager", "--strict-markers", "--strict-config"]
+addopts = ["--cov=src/host_voyager", "--strict-markers", "--strict-config"]
 markers = []
 filterwarnings = [
   "error",
@@ -91,7 +92,9 @@ filterwarnings = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-host_voyager = ["py.typed"]
+# PEP 561 marker and type stubs must be shipped in the wheel, or downstream type
+# checkers ignore them.
+host_voyager = ["py.typed", "*.pyi", "oops/*.pyi"]
 
 [tool.setuptools_scm]
 local_scheme = "no-local-version"
@@ -116,12 +119,21 @@ fail_under = 65
 
 [tool.mypy]
 strict = true
+# stubtest discovers every module under the package and would compare each unannotated
+# .py module against itself. Only the two __init__.pyi stubs carry type information, so
+# every other module is excluded from discovery; the override below keeps mypy from
+# following an import into one of them.
+exclude = [
+  'host_voyager/oops/(_voyager|iss)\.py$',
+]
 
-# src is deliberately unannotated (see .claude/rules/python.md), so mypy checks only the
-# tests and treats everything imported from host_voyager as Any.
+# src is deliberately unannotated (see .claude/rules/python.md). The published type
+# information lives in the stubs of host_voyager and host_voyager.oops; every other module
+# has no stub, so mypy treats what the tests import from it as Any.
 [[tool.mypy.overrides]]
-module = ["host_voyager", "host_voyager.*"]
+module = ["host_voyager._version", "host_voyager.oops._voyager", "host_voyager.oops.iss"]
 follow_imports = "skip"
+ignore_errors = true
 
 [[tool.mypy.overrides]]
 module = ["cspyce", "cspyce.*", "julian", "julian.*"]

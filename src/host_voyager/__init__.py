@@ -1,11 +1,11 @@
 ##########################################################################################
 # host_voyager/__init__.py
 ##########################################################################################
-"""The Voyager mission hosts for oops.
+"""The Voyager mission hosts for the OOPS observation geometry toolkit.
 
-The host classes are exported here but imported only on first access, so that importing
-:mod:`host_voyager` does not import oops. Importing ``host_voyager.oops`` registers every
-host with ``oops.Host``.
+The package exports :class:`~host_voyager.oops.iss.VoyagerISS`. Importing
+``host_voyager`` does not import oops; the first access to the class imports
+:mod:`host_voyager.oops`, which registers the host with :class:`~oops.host.Host`.
 """
 
 import importlib

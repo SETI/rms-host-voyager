@@ -20,6 +20,7 @@ description: Standards for declaring, installing, and maintaining Python project
 ## 3. Version Constraints
 
 - Specify **minimum** compatible versions for direct dependencies (e.g., `numpy>=2.2.0`).
+  - **Exception:** a direct dependency that must be installed from an unreleased branch, because no release yet has the API the project needs, has no meaningful minimum version. Declare it unversioned in `pyproject.toml` (e.g. `"rms-oops"`), install the branch explicitly in CI, the ReadTheDocs config and the venv setup script (e.g. `"rms-oops @ git+https://github.com/SETI/rms-oops@<branch>"`), and give it a minimum version as soon as a release has the API. Every other direct dependency still needs a minimum version.
 - Do NOT pin exact versions (`==`) in library projects; exact pinning belongs in lock files or application deployments.
 - For dev/docs dependencies, specify minimum versions to ensure consistent tool behavior across contributors.
 
