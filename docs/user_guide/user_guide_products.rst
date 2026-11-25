@@ -67,7 +67,7 @@ When the PDS3 label is read, ``if_scale`` is the ``REFLECTANCE_SCALING_FACTOR`` 
 label's ``IMAGE`` object. The labels of RAW and CLEANED products give an approximate
 factor, and those of CALIB and GEOMED products an accurate one.
 
-When only the image file is read, or the label gives no factor, ``if_scale`` comes from
+When only the image file is read, or the label lacks one, ``if_scale`` comes from
 the VICAR header. The header of a CALIB or GEOMED product has a line of the form ``FOR
 (I/F)*10000., MULTIPLY DN VALUE BY x``, and the factor is *x* divided by 10000. For a
 Voyager 1 image, it is then corrected as the archive's tutorial

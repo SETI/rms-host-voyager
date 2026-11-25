@@ -654,7 +654,7 @@ def test_no_clock_count(tmp_path: pathlib.Path) -> None:
     """An image without any clock count raises HostFormatError naming the file."""
 
     with pytest.raises(oops.host.HostFormatError,
-                       match=r'^Voyager ISS image .*X.IMG gives no spacecraft clock '
+                       match=r'^Voyager ISS image .*X.IMG has no spacecraft clock '
                              'count$'):
         read_image(tmp_path, 'X', header={'LAB02': lab02(fds='00000.00')},
                    astrometry=True)
@@ -664,7 +664,7 @@ def test_clock_count_outside_the_imaging_periods(tmp_path: pathlib.Path) -> None
     """Without a time, a count in no imaging period raises HostFormatError."""
 
     with pytest.raises(oops.host.HostFormatError,
-                       match=r'gives no time, and its clock count 30000:00:001 does not '
+                       match=r'has no time, and its clock count 30000:00:001 does not '
                              r'fall in one clock partition within the imaging periods$'):
         read_label(tmp_path, label={'STOP_TIME': None, 'IMAGE_TIME': None,
                                     'SPACECRAFT_CLOCK_STOP_COUNT': '"30000:00:001"'},
@@ -934,7 +934,7 @@ def test_if_scale_from_the_header(tmp_path: pathlib.Path, lab02_line: str, filt:
 
 
 def test_if_scale_not_a_number(tmp_path: pathlib.Path) -> None:
-    """A header factor that is not a number gives none."""
+    """A header factor that is not a number gives no if_scale."""
 
     obs = read_image(tmp_path, if_line=IF_LINE.replace('1.25000', 'N/A'),
                      astrometry=True)

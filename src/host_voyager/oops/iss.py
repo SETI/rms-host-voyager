@@ -875,7 +875,7 @@ class VoyagerISS(oops.Host):
             camera = items['INSTRUMENT_NAME'][0] + 'AC'
         count = VoyagerISS._clock_count(items, name)
         if count is None:
-            raise oops.host.HostFormatError(f'Voyager ISS image {name} gives no '
+            raise oops.host.HostFormatError(f'Voyager ISS image {name} has no '
                                             'spacecraft clock count')
         tstop = VoyagerISS._tstop(items, vgr, count, name)
         texp = float(items.get('EXPOSURE_DURATION', 0.))
@@ -985,7 +985,7 @@ class VoyagerISS(oops.Host):
         known; otherwise IMAGE_TIME, which the index gives to the second and which is
         otherwise the same. If neither is known, the time is that of the clock count in
         the clock kernel. That is so for 17 index rows in VGISS_6101 and VGISS_6201, 76
-        reads of an image file alone whose header gives no valid time, and the 11 headers
+        reads of an image file alone whose header lacks a valid time, and the 11 headers
         with FDS 00000.00. The count's time is a median of 0.9 s after STOP_TIME on the
         76,635 raw images that give both, but whole FDS minutes later for some and up to
         7,625 s earlier for a few.
@@ -1010,7 +1010,7 @@ class VoyagerISS(oops.Host):
 
         ticks = _Voyager.sclk_ticks(vgr, count)
         if ticks is None:
-            raise oops.host.HostFormatError(f'Voyager ISS image {name} gives no time, '
+            raise oops.host.HostFormatError(f'Voyager ISS image {name} has no time, '
                                             f'and its clock count {count} does not fall '
                                             'in one clock partition within the imaging '
                                             'periods')
