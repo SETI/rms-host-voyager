@@ -24,7 +24,8 @@ def test_timeline_times_follow_their_dates() -> None:
     """Each phase's TDB is the time of its UTC date."""
 
     assert [phase['TDB'] for phase in TIMELINE] == pytest.approx(
-        [julian.tdb_from_tai(julian.tai_from_iso(phase['UTC'])) for phase in TIMELINE])
+        [julian.tdb_from_tai(julian.tai_from_iso(phase['UTC'])) for phase in TIMELINE],
+        abs=1.e-3)
 
 
 @pytest.mark.parametrize(('iso', 'planet'), [

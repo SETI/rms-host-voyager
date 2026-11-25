@@ -29,6 +29,10 @@ from host_voyager.oops.iss import VoyagerISS
 EXPOSURE = 1.92     # seconds
 SCET = dt.datetime(1980, 10, 29, 5, 57, 22)
 
+# The tolerance of a comparison of times in seconds TDB, which are of order 1e9 s, so that
+# pytest.approx's default relative tolerance would allow hundreds of seconds
+TIME_TOLERANCE = 1.e-3
+
 
 def tdb(iso: str) -> float:
     """The time in seconds TDB of an ISO UTC time."""
@@ -333,6 +337,15 @@ def test_given_vicar_label_for_astrometry(tmp_path: pathlib.Path) -> None:
     assert obs.dict['STOP_TIME'] == SCET
 
 
+def test_given_vicar_label_for_a_full_read(tmp_path: pathlib.Path) -> None:
+    """Given a VicarLabel without astrometry, the image file it was read from supplies
+    the data."""
+
+    path = write_image(tmp_path / 'C3450201_RAW.IMG')
+    obs = VoyagerISS.from_file(VicarLabel(path, strict=False))
+    assert obs.data[0, 1] == 1
+
+
 @pytest.mark.parametrize('kind', ['label', 'image'])
 def test_oops_host_dispatches(tmp_path: pathlib.Path, kind: str) -> None:
     """oops.Host.from_file hands a Voyager ISS label or image file to this host."""
@@ -613,7 +626,7 @@ def test_time_ends_at_stop_time(tmp_path: pathlib.Path) -> None:
     obs = read_label(tmp_path, label={'STOP_TIME': '1980-10-29T05:57:22.50'},
                      astrometry=True)
     assert obs.time == pytest.approx((tdb('1980-10-29T05:57:22.50') - EXPOSURE,
-                                      tdb('1980-10-29T05:57:22.50')))
+                                      tdb('1980-10-29T05:57:22.50')), abs=TIME_TOLERANCE)
 
 
 def test_time_falls_back_to_image_time(tmp_path: pathlib.Path) -> None:
@@ -622,7 +635,7 @@ def test_time_falls_back_to_image_time(tmp_path: pathlib.Path) -> None:
     obs = read_label(tmp_path, label={'STOP_TIME': None,
                                       'IMAGE_TIME': '1980-10-29T05:57:23.00'},
                      astrometry=True)
-    assert obs.time[1] == pytest.approx(tdb('1980-10-29T05:57:23.00'))
+    assert obs.time[1] == pytest.approx(tdb('1980-10-29T05:57:23.00'), abs=TIME_TOLERANCE)
 
 
 def test_time_from_the_clock_count(tmp_path: pathlib.Path) -> None:
@@ -630,7 +643,7 @@ def test_time_from_the_clock_count(tmp_path: pathlib.Path) -> None:
 
     obs = read_label(tmp_path, label={'STOP_TIME': '"UNK"', 'IMAGE_TIME': 'UNK'},
                      astrometry=True)
-    assert obs.time[1] == pytest.approx(tdb(STOP_TIME))
+    assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=TIME_TOLERANCE)
 
 
 def test_time_from_the_image_number(tmp_path: pathlib.Path) -> None:
@@ -639,7 +652,7 @@ def test_time_from_the_image_number(tmp_path: pathlib.Path) -> None:
     obs = read_label(tmp_path, label={'STOP_TIME': None, 'IMAGE_TIME': None,
                                       'SPACECRAFT_CLOCK_STOP_COUNT': None},
                      astrometry=True)
-    assert obs.time[1] == pytest.approx(tdb(STOP_TIME))
+    assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=TIME_TOLERANCE)
 
 
 def test_time_from_the_count_in_the_file_name(tmp_path: pathlib.Path) -> None:
@@ -647,7 +660,7 @@ def test_time_from_the_count_in_the_file_name(tmp_path: pathlib.Path) -> None:
 
     obs = read_image(tmp_path, header={'LAB02': lab02(fds='00000.00', scet='**')},
                      astrometry=True)
-    assert obs.time[1] == pytest.approx(tdb(STOP_TIME))
+    assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=TIME_TOLERANCE)
 
 
 def test_no_clock_count(tmp_path: pathlib.Path) -> None:
@@ -682,7 +695,7 @@ def test_missing_exposure_is_zero(tmp_path: pathlib.Path) -> None:
     """When no source gives an exposure, it is zero."""
 
     obs = read_label(tmp_path, label={'EXPOSURE_DURATION': 'UNK'}, astrometry=True)
-    assert obs.time == pytest.approx((tdb(STOP_TIME), tdb(STOP_TIME)))
+    assert obs.time == pytest.approx((tdb(STOP_TIME), tdb(STOP_TIME)), abs=TIME_TOLERANCE)
 
 ##########################################################################################
 # Pointing
@@ -1029,7 +1042,7 @@ def test_from_index_merges_the_default_supplement() -> None:
     """The default supplement, named after the raw image index, gives STOP_TIME."""
 
     obs = next(VoyagerISS.from_index(INDEX))
-    assert obs.time[1] == pytest.approx(tdb('1980-10-29T04:21:22.00'))
+    assert obs.time[1] == pytest.approx(tdb('1980-10-29T04:21:22.00'), abs=TIME_TOLERANCE)
 
 
 def test_from_index_without_the_default_supplement(tmp_path: pathlib.Path) -> None:
@@ -1128,7 +1141,7 @@ def test_row_with_a_null_time() -> None:
 
     obs = from_row(STOP_TIME=None, IMAGE_TIME='UNK',
                    SPACECRAFT_CLOCK_STOP_COUNT='34502:02:001')
-    assert obs.time[1] == pytest.approx(tdb(STOP_TIME) + 48.)
+    assert obs.time[1] == pytest.approx(tdb(STOP_TIME) + 48., abs=TIME_TOLERANCE)
 
 
 def test_row_camera_from_the_instrument_name() -> None:

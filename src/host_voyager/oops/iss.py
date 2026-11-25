@@ -280,8 +280,10 @@ class VoyagerISS(oops.Host):
         Parameters:
             fileinfo (str | pathlib.Path | FCPath | VicarLabel | VicarImage): The path to
                 the PDS3 label (a name ending in ".LBL", in any case) or to the VICAR
-                image file, or the VICAR header or image that :meth:`oops.Host.from_file`
-                read from the image file, whose `filepath` names the file.
+                image file, or a VICAR header or image read from the image file, as
+                :meth:`oops.Host.from_file` passes it, whose `filepath` names the file.
+                Unless `astrometry` is True, a header is read again from that file for
+                its array.
             return_all_planets (bool, optional): Include kernels for all planets, not just
                 the planet of the encounter.
             pds3_options (dict[str, Any], optional): Any keyword arguments and their
@@ -460,6 +462,9 @@ class VoyagerISS(oops.Host):
         if isinstance(fileinfo, (VicarLabel, VicarImage)):
             image_path = FCPath(fileinfo.filepath)
             header = fileinfo
+            # A VicarLabel holds no array, so a full read takes it from the file
+            if not astrometry and not isinstance(fileinfo, VicarImage):
+                header = VoyagerISS._read_vicar(image_path, astrometry=False)
         else:
             path = FCPath(fileinfo)
             if path.suffix.lower() == '.lbl':

@@ -108,6 +108,11 @@ field of view and pass it as ``navigation``:
 
 .. code-block:: python
 
+   from host_voyager import VoyagerISS
+
+   path = 'VGISS_6109/DATA/C34502XX/C3450201_GEOMED.LBL'
+   (du, dv) = (3.5, -2.0)      # the offset in pixels
+
    obs = VoyagerISS.from_file(path)
    obs = VoyagerISS.from_file(path, navigation=obs.fov.offset_angles_from_duv((du, dv)))
 
