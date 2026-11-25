@@ -1,0 +1,10 @@
+# Allowlist for `mypy.stubtest`, read by scripts/run-all-checks.sh and CI.
+#
+# The supported imports are "from host_voyager import ..." and
+# "from host_voyager.oops import ...", so the stubs of those two packages describe the
+# whole public API. host_voyager.oops imports the module below, which is implementation
+# detail and deliberately left without a stub; stubtest reports it as "failed to find
+# stubs", which this file accepts. The private _voyager module is not checked at all.
+# Nothing else is accepted: a public name missing from the two stubs still fails the
+# check.
+host_voyager\.oops\.iss

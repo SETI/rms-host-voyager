@@ -1,0 +1,11 @@
+# Dependabot opens pull requests that update the GitHub Actions used by the
+# workflows. The Python dependencies are declared with minimum versions, so
+# there are no pinned versions for it to update; turn on "Dependabot alerts"
+# and "Dependabot security updates" in the repository's settings to be warned
+# about, and offered fixes for, vulnerable versions.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
