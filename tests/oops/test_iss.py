@@ -5,6 +5,7 @@
 
 import datetime as dt
 import pathlib
+import re
 import shutil
 from typing import Any
 
@@ -33,6 +34,12 @@ def tdb(iso: str) -> float:
     """The time in seconds TDB of an ISO UTC time."""
 
     return float(julian.tdb_from_tai(julian.tai_from_iso(iso)))
+
+
+def esc(path: pathlib.Path) -> str:
+    """A path as the host writes it in a message, escaped for a regular expression."""
+
+    return re.escape(str(FCPath(path)))
 
 
 def frame_matrix(obs: Any) -> np.ndarray:
@@ -371,7 +378,7 @@ def test_label_without_an_image_pointer(tmp_path: pathlib.Path) -> None:
 
     path = write_label(tmp_path / 'C3450201_RESLOC.LBL', None)
     with pytest.raises(oops.host.PdsHostError,
-                       match=f'^Voyager ISS label {path} has no \\^IMAGE pointer$'):
+                       match=f'^Voyager ISS label {esc(path)} has no \\^IMAGE pointer$'):
         VoyagerISS.from_file(path)
 
 
@@ -397,7 +404,7 @@ def test_image_of_another_host(tmp_path: pathlib.Path) -> None:
 
     path = write_image(tmp_path / 'X.IMG', header={'LAB02': None})
     with pytest.raises(oops.host.WrongHostError,
-                       match=f'^not a Voyager ISS VICAR file: {path}$'):
+                       match=f'^not a Voyager ISS VICAR file: {esc(path)}$'):
         VoyagerISS.from_file(path)
 
 
@@ -407,7 +414,7 @@ def test_image_header_that_cannot_be_parsed(tmp_path: pathlib.Path) -> None:
     path = tmp_path / 'C3450201_RAW.IMG'
     path.write_bytes(b'LBLSIZE=40 FORMAT= \x00' + bytes(40))
     with pytest.raises(oops.host.VicarHostError,
-                       match=f'^cannot read the VICAR file {path}: '):
+                       match=f'^cannot read the VICAR file {esc(path)}: '):
         VoyagerISS.from_file(path)
 
 
@@ -417,7 +424,7 @@ def test_image_cut_short(tmp_path: pathlib.Path) -> None:
     (label_path, image_path) = write_product(tmp_path)
     image_path.write_bytes(image_path.read_bytes()[:-5])
     with pytest.raises(oops.host.VicarHostError,
-                       match=f'^cannot read the VICAR file {image_path}: '):
+                       match=f'^cannot read the VICAR file {esc(image_path)}: '):
         VoyagerISS.from_file(label_path)
 
 
@@ -443,8 +450,8 @@ def test_array_that_does_not_match_its_label(tmp_path: pathlib.Path) -> None:
 
     (label_path, image_path) = write_product(tmp_path, label={'lines': LINES + 1})
     with pytest.raises(oops.host.HostFormatError,
-                       match=f'^Voyager ISS image {image_path} holds a 4x6 array, where '
-                             f'its label {label_path} describes 5x6$'):
+                       match=f'^Voyager ISS image {esc(image_path)} holds a 4x6 array, where '
+                             f'its label {esc(label_path)} describes 5x6$'):
         VoyagerISS.from_file(label_path)
 
 ##########################################################################################
