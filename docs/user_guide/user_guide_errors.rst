@@ -93,6 +93,17 @@ It raises these when the iteration reaches the row concerned:
     A row has no time, and its clock count cannot be placed in one partition of the
     clock (see :doc:`user_guide_geometry`).
 
+:exc:`~oops.OopsIndexError`
+    ``select`` is an index that is out of range, such as 1, when the iteration reaches
+    the first row that is given.
+
+:exc:`~oops.OopsValueError`
+    ``select`` is a name, when the iteration reaches the first row that is given.
+
+:exc:`~oops.OopsTypeError`
+    ``select``, or an item of a tuple, is not an int, slice, or string, when the
+    iteration reaches the first row that is given.
+
 :exc:`KeyError`
     A row lacks a column that ``filter`` names.
 
