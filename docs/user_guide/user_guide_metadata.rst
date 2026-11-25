@@ -158,7 +158,9 @@ value.
        (-31 or -32).
    * - ``spice_frame_is_frozen``
      - True when the frame is fixed from the image's own pointing record, False when it
-       is the camera's SPICE frame (see :doc:`user_guide_geometry`).
+       is the camera's SPICE frame (see :doc:`user_guide_geometry`). This and the two
+       rows above describe the image's SPICE pointing, so a ``frame`` override does not
+       change them.
    * - ``filepath``, ``basename``, ``image_url``, ``image_abspath``, ``label_url``,
        ``label_abspath``
      - The files read (see :doc:`user_guide_files`).

@@ -1,6 +1,12 @@
 ##########################################################################################
 # host_voyager/oops/_voyager.py
 ##########################################################################################
+"""The Voyager mission support of the host: the encounter timeline, the periods in which
+the cameras imaged each planet, the kernels, and the Paths of the two spacecraft.
+
+:class:`_Voyager` holds them for :class:`~host_voyager.VoyagerISS`, which calls it to
+initialize the mission and to time its observations.
+"""
 
 import julian
 import spicedb
@@ -26,17 +32,19 @@ for _phase in TIMELINE:
 _ALL_PLANETS = ['MERCURY', 'VENUS', 'EARTH', 'MARS', 'JUPITER', 'SATURN', 'URANUS',
                 'NEPTUNE']
 
-# The periods in which each spacecraft's cameras took the VGISS images: for each
-# encounter, the first and last STOP_TIME in the raw image indexes, widened by 30 days.
-# The FDS clock count recurs about every six years, in another clock partition; for every
-# one of the 76,635 raw images with a STOP_TIME, exactly one partition puts its count in
-# one of these periods, the partition that the supplemental index gives, so the partition
-# is always taken from these periods.
+# The periods in which each spacecraft's cameras took the VGISS images, one for each
+# encounter. A period runs from 30 days before the first image of the encounter to 30
+# days after the last, by STOP_TIME in the raw image indexes, except that the two Saturn
+# periods begin 30 days before the earliest of the 17 images with no time, which take
+# their time from the clock count. The periods cover all 76,652 current raw images. The
+# FDS clock count recurs about every six years, in another clock partition, but for every
+# image exactly one partition puts its count in one of these periods, the partition that
+# the supplemental index gives, so the partition is always taken from these periods.
 IMAGING_PERIODS = {
     1: [('1978-11-11', '1979-05-14'),       # Jupiter
-        ('1980-07-24', '1981-01-14')],      # Saturn
+        ('1980-02-19', '1981-01-14')],      # Saturn
     2: [('1979-03-16', '1979-08-15'),       # Jupiter
-        ('1981-05-06', '1981-10-05'),       # Saturn
+        ('1981-01-19', '1981-10-05'),       # Saturn
         ('1985-10-07', '1986-03-21'),       # Uranus
         ('1989-05-06', '1989-10-29')],      # Neptune
 }

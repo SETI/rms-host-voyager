@@ -295,8 +295,10 @@ class VoyagerISS(oops.Host):
             select (int | slice | str | tuple[int | slice | str, ...], optional): The
                 selection that :class:`oops.Host` applies to the observations of a file.
                 An image file holds one Snapshot, which None, the default, returns. Any
-                other value is applied to that Snapshot alone, so an index, a slice or a
-                tuple raises TypeError and a name raises :class:`oops.OopsValueError`.
+                other value is applied to a tuple holding that Snapshot, as OOPS applies
+                it to the observations of a file: 0 returns the Snapshot, a slice returns
+                a tuple, an index out of range raises :class:`oops.OopsIndexError`, and a
+                name raises :class:`oops.OopsValueError`.
             target (str | oops.Body, optional): Override for the default target Body of
                 the observation. Use "NONE" for inertial pointing, indicating that no
                 Solar System body was tracked.
@@ -305,6 +307,9 @@ class VoyagerISS(oops.Host):
             path (str | oops.Path, optional): Override for the Path of the observer.
             frame (str | oops.Frame, optional): Override for the Frame of the observing
                 instrument, such as a :class:`~oops.frame.Cmatrix`, used as it is given.
+                The subfields that describe the image's SPICE pointing,
+                `spice_frame_name`, `spice_frame_id`, `spice_to_frame`, `ck_object_id`,
+                `ck_sclk_id` and `spice_frame_is_frozen`, do not change with it.
             cadence (oops.Cadence, optional): Override for the Cadence of the observation.
             fov (oops.FOV, optional): Override for the default FOV of the observing
                 instrument.
@@ -424,7 +429,25 @@ class VoyagerISS(oops.Host):
         if header_dict is not None:
             obs.insert_subfield('header_dict', header_dict)
         oops.Host._set_path_attributes(obs, files.image_path, files.label_path)
-        return oops.Host._apply_select(obs, select)
+        return VoyagerISS._select_snapshot(obs, select)
+
+    @staticmethod
+    def _select_snapshot(obs, select):
+        """The choice that `select` makes from the one Snapshot of an image or a row.
+
+        Parameters:
+            obs (Snapshot): The observation.
+            select (int | slice | str | tuple[int | slice | str, ...] | None): The choice,
+                made by ``Host._apply_select`` of oops as from a tuple holding `obs`; None
+                for `obs` itself.
+
+        Returns:
+            Snapshot | tuple[Snapshot, ...]: The choice.
+        """
+
+        if select is None:
+            return obs
+        return oops.Host._apply_select((obs,), select)
 
     @staticmethod
     def _read_files(fileinfo, *, astrometry, pds3_options):
@@ -698,6 +721,9 @@ class VoyagerISS(oops.Host):
             path (str | oops.Path, optional): Override for the Path of the observer.
             frame (str | oops.Frame, optional): Override for the Frame of the observing
                 instrument, such as a :class:`~oops.frame.Cmatrix`, used as it is given.
+                The subfields that describe the image's SPICE pointing,
+                `spice_frame_name`, `spice_frame_id`, `spice_to_frame`, `ck_object_id`,
+                `ck_sclk_id` and `spice_frame_is_frozen`, do not change with it.
             cadence (oops.Cadence, optional): Override for the Cadence of the observation.
             fov (oops.FOV, optional): Override for the FOV of every observation.
             calibrations (oops.Calibration | list[oops.Calibration], optional): Override
@@ -744,6 +770,9 @@ class VoyagerISS(oops.Host):
               fixed :class:`~oops.frame.Cmatrix`; False if they do not, so that the
               frame is the camera's :class:`~oops.frame.SpiceFrame`, and using it raises
               the error of SPICE that names its error code.
+              Like `spice_frame_name`, `spice_frame_id` and `spice_to_frame`, these
+              describe the image's SPICE pointing, so a `frame` override does not change
+              them.
             - `filepath`: the relative path VOLUME_NAME/FILE_SPECIFICATION_NAME, as the
               index gives it; `basename`: the last component of that path.
 
@@ -828,7 +857,7 @@ class VoyagerISS(oops.Host):
                                         overrides=overrides)
         obs.insert_subfield('dict', row)
         oops.Host._set_path_attributes(obs, filepath, None)
-        return oops.Host._apply_select(obs, select)
+        return VoyagerISS._select_snapshot(obs, select)
 
     @classmethod
     def _supplement_path(cls, index_path):
@@ -1095,8 +1124,8 @@ class VoyagerISS(oops.Host):
     def initialize(*, planets=None, asof=None, irregulars=True):
         """Initialize key information about the ISS instrument.
 
-        Defines the Solar System bodies over the mission, the moons of Uranus and Neptune
-        included; loads the mission and ISS kernels; and constructs the FOVs.
+        Defines the Solar System bodies over the mission, with the planets and moons
+        that `planets` names; loads the mission and ISS kernels; and constructs the FOVs.
         :meth:`from_file` and :meth:`from_index` call it with the default values; call it
         before them only to choose other values. After the first call, later calls to
         this function are ignored. Importing the module loads nothing.

@@ -310,8 +310,8 @@ def test_sclk_ticks_in_the_imaging_periods() -> None:
 def test_sclk_ticks_outside_the_imaging_periods() -> None:
     """A count in no imaging period gives None."""
 
-    # About 150 days before STOP_TIME in partition 2, and 6 years later in partition 3
-    assert _Voyager.sclk_ticks(1, '30000:00:001') is None
+    # About 480 days before STOP_TIME in partition 2, and 6 years later in partition 3
+    assert _Voyager.sclk_ticks(1, '20000:00:001') is None
 
 
 def test_sclk_ticks_in_two_imaging_periods(monkeypatch: pytest.MonkeyPatch) -> None:

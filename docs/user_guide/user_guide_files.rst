@@ -93,8 +93,9 @@ These options are particular to the Voyager host:
 
 ``select``
     An image file holds one image, which the default, None, returns. Any other value is
-    applied to that one Snapshot as OOPS applies a selection to the observations of a
-    file, so an index or a slice raises :exc:`TypeError` and a name raises
+    applied to a tuple holding that one Snapshot, as OOPS applies a selection to the
+    observations of a file. The index 0 returns the Snapshot, a slice returns a tuple, an
+    index out of range raises :exc:`~oops.OopsIndexError`, and a name raises
     :exc:`~oops.OopsValueError`.
 
 The standard OOPS overrides, ``target``, ``lightsource``, ``path``, ``frame``,

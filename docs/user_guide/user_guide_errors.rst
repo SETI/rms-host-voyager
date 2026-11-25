@@ -30,12 +30,17 @@ Reading an image file
 
 :exc:`TypeError`
     A keyword argument is not one that the method accepts. This is Python's own error
-    for an unexpected keyword argument. It is also raised for an index or a slice in
-    ``select``.
+    for an unexpected keyword argument.
+
+:exc:`~oops.OopsIndexError`
+    ``select`` is an index that is out of range, such as 1.
 
 :exc:`~oops.OopsValueError`
     ``pds3_options`` holds an option that the parser does not accept, or ``select`` is a
     name.
+
+:exc:`~oops.OopsTypeError`
+    ``select``, or an item of a tuple, is not an int, slice, or string.
 
 :exc:`OSError`
     A file cannot be found or read, including the image file that a PDS3 label points
@@ -86,8 +91,7 @@ It raises these when the iteration reaches the row concerned:
 
 :exc:`~oops.host.HostFormatError`
     A row has no time, and its clock count cannot be placed in one partition of the
-    clock. Ten rows of VGISS_6101 and VGISS_6201 raise it, so the iteration over those
-    two volumes ends at the first of them (see :doc:`user_guide_geometry`).
+    clock (see :doc:`user_guide_geometry`).
 
 :exc:`KeyError`
     A row lacks a column that ``filter`` names.

@@ -33,11 +33,6 @@ are later by whole FDS minutes of 48 s, and 12 are earlier, by up to about two h
 ``C4201035``. A time taken from the count can therefore be off by minutes or more.
 :doc:`user_guide_appendix_pointing` gives the evidence.
 
-Ten of the 17 raw images with no time in their labels, three of Voyager 1 from March to
-May 1980 and seven of Voyager 2 from February to April 1981, were taken outside those
-months, so their counts cannot be placed and their observations cannot be built (see
-:doc:`user_guide_errors`).
-
 Pointing
 ========
 

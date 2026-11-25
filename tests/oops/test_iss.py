@@ -17,7 +17,8 @@ import pytest
 from conftest import (CLOCK_COUNT, GEOMED_VICAR, HEADER_LINES, IF_LINE, INDEX,
                       INDEX_ROWS, LINE_SAMPLES, LINES,
                       RAW_LABEL, SPICE_FRAME_ANGLE, STOP_TIME, SUPPLEMENT, FakeSpice,
-                      FakeSpiceDB, camera_matrix, fake_scencd, rotation, write_image,
+                      FakeSpiceDB, camera_matrix, fake_scencd, fake_sct2e, rotation,
+                      write_image,
                       write_label, write_product)
 from filecache import FCPath
 from vicar import VicarImage, VicarLabel
@@ -375,11 +376,17 @@ def test_select_none_returns_the_snapshot(tmp_path: pathlib.Path) -> None:
     assert isinstance(read_label(tmp_path, select=None), oops.observation.Snapshot)
 
 
-def test_select_index_raises(tmp_path: pathlib.Path) -> None:
-    """An index in select is applied to the one Snapshot, which cannot be indexed."""
+def test_select_zero_returns_the_snapshot(tmp_path: pathlib.Path) -> None:
+    """select=0 chooses the one Snapshot from the tuple that holds it."""
 
-    with pytest.raises(TypeError, match='not subscriptable'):
-        read_label(tmp_path, select=0)
+    assert isinstance(read_label(tmp_path, select=0), oops.observation.Snapshot)
+
+
+def test_select_one_is_out_of_range(tmp_path: pathlib.Path) -> None:
+    """select=1 is an index beyond the one Snapshot."""
+
+    with pytest.raises(oops.OopsIndexError, match='out of range'):
+        read_label(tmp_path, select=1)
 
 ##########################################################################################
 # from_file(): files that cannot be read
@@ -663,6 +670,35 @@ def test_time_from_the_count_in_the_file_name(tmp_path: pathlib.Path) -> None:
     assert obs.time[1] == pytest.approx(tdb(STOP_TIME), abs=TIME_TOLERANCE)
 
 
+def test_count_in_march_1980_of_voyager_1() -> None:
+    """A row with no time and the count 27830:18:001 takes its time from the clock; in
+    1980 March, the count is in the Saturn imaging period of Voyager 1."""
+
+    obs = from_row(STOP_TIME=None, IMAGE_TIME='UNK',
+                   SPACECRAFT_CLOCK_STOP_COUNT='27830:18:001')
+    assert obs.time[1] == pytest.approx(
+        fake_sct2e(-31, fake_scencd(-31, '2/27830:18:001')), abs=TIME_TOLERANCE)
+
+
+def test_count_in_march_1981_of_voyager_2() -> None:
+    """A row with no time and the count 38333:25:001 takes its time from the clock; in
+    1981 March, the count is in the Saturn imaging period of Voyager 2."""
+
+    obs = from_row(STOP_TIME=None, IMAGE_TIME='UNK', INSTRUMENT_HOST_NAME='VOYAGER 2',
+                   SPACECRAFT_CLOCK_STOP_COUNT='38333:25:001')
+    assert obs.time[1] == pytest.approx(
+        fake_sct2e(-32, fake_scencd(-32, '2/38333:25:001')), abs=TIME_TOLERANCE)
+
+
+def test_the_iteration_continues_past_a_row_with_no_time() -> None:
+    """The row after one that takes its time from the clock is given too."""
+
+    timeless = ROW | {'STOP_TIME': 'UNK', 'IMAGE_TIME': 'UNK',
+                      'SPACECRAFT_CLOCK_STOP_COUNT': '27830:18:001'}
+    rows = VoyagerISS.from_index(INDEX, row_dicts=[timeless, ROW])
+    assert len(list(rows)) == 2
+
+
 def test_no_clock_count(tmp_path: pathlib.Path) -> None:
     """An image without any clock count raises HostFormatError naming the file."""
 
@@ -677,10 +713,10 @@ def test_clock_count_outside_the_imaging_periods(tmp_path: pathlib.Path) -> None
     """Without a time, a count in no imaging period raises HostFormatError."""
 
     with pytest.raises(oops.host.HostFormatError,
-                       match=r'has no time, and its clock count 30000:00:001 does not '
+                       match=r'has no time, and its clock count 20000:00:001 does not '
                              r'fall in one clock partition within the imaging periods$'):
         read_label(tmp_path, label={'STOP_TIME': None, 'IMAGE_TIME': None,
-                                    'SPACECRAFT_CLOCK_STOP_COUNT': '"30000:00:001"'},
+                                    'SPACECRAFT_CLOCK_STOP_COUNT': '"20000:00:001"'},
                    astrometry=True)
 
 
@@ -742,7 +778,7 @@ def test_count_outside_the_imaging_periods_gives_the_spice_frame(
         tmp_path: pathlib.Path, fake_spice: FakeSpice) -> None:
     """A count that falls in no imaging period names no record."""
 
-    obs = read_label(tmp_path, label={'SPACECRAFT_CLOCK_STOP_COUNT': '"30000:00:001"'},
+    obs = read_label(tmp_path, label={'SPACECRAFT_CLOCK_STOP_COUNT': '"20000:00:001"'},
                      astrometry=True)
     assert fake_spice.ckgp == []
     assert fake_spice.spice_frames == ['VG1_ISSNA']
@@ -755,6 +791,18 @@ def test_frame_override_is_used_as_given(tmp_path: pathlib.Path) -> None:
     cmatrix = oops.frame.Cmatrix(oops.Matrix3(rotation(1, 0.2)))
     obs = read_label(tmp_path, frame=cmatrix, astrometry=True)
     assert frame_matrix(obs) == pytest.approx(rotation(1, 0.2))
+
+
+def test_frame_override_leaves_the_spice_pointing_subfields(
+        tmp_path: pathlib.Path) -> None:
+    """A Cmatrix override does not change the subfields of the image's SPICE pointing."""
+
+    obs = read_label(tmp_path, frame=oops.frame.Cmatrix(oops.Matrix3.IDENTITY),
+                     astrometry=True)
+    assert obs.spice_frame_is_frozen is True
+    assert obs.ck_object_id == -31100
+    assert obs.ck_sclk_id == -31
+    assert obs.spice_frame_name == 'VG1_ISSNA'
 
 
 def test_frame_override_leaves_out_the_cks(tmp_path: pathlib.Path,
