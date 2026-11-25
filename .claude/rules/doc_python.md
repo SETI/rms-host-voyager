@@ -1,0 +1,149 @@
+---
+description: Foundation standards for documenting a Python package with Sphinx, ReadTheDocs, and docstrings; shared by the README, user-guide, dev-guide, and how-to skills.
+---
+
+# Python Documentation Foundation
+
+This rule defines the documentation system, prose conventions, docstring
+rules, and Sphinx build requirements that apply to **all** documentation in a
+Python package. The companion skills (in `.claude/skills/`, loaded when a task
+calls for them) build on it:
+
+- `doc-readme` — the top-level `README`.
+- `doc-user-guide` — the end-user manual.
+- `doc-dev-guide` — the contributor / maintainer manual and API reference.
+- `doc-how-to` — task-focused how-to articles.
+
+Read this rule first; the others assume its docstring, cross-reference, prose,
+and build requirements without repeating them.
+
+## 1. Documentation System
+
+- Use **Sphinx** for all project documentation, hosted on **ReadTheDocs**.
+- Author narrative pages in **reStructuredText** (`.rst`). Markdown (`.md`) is
+  permitted only for files that must also render on the code host (the
+  `README`, `CONTRIBUTING`), included into Sphinx via **MyST** (`myst-parser`).
+- Keep all documentation source under a single `docs/` directory with one
+  `conf.py`. Build outputs (`docs/_build/`) are never committed.
+- After ANY code or documentation change, rebuild the full tree and fix every
+  warning and error before delivering (see Section 6).
+
+## 2. Prose Conventions
+
+- One space between a sentence-ending period and the next sentence.
+- American spelling, not British: `center` not `centre`, `color` not `colour`,
+  `normalize` not `normalise`. Enforced by `codespell`; see the allow-list in
+  `pyproject.toml` for the terms of art it is told to accept. A line that needs
+  a word the gate is right to flag -- a test whose subject is the misspelling,
+  an external API name -- carries an inline `codespell:ignore <word>` with the
+  reason beside it, rather than widening the allow-list for everyone.
+- Define each domain-specific term on first use.
+- Describe the **current** state of the software only. Never anchor prose to a
+  moment in time or to migration history: avoid "new", "legacy", "old",
+  "now", "recently", "as before", "backwards compatible", and similar framing.
+- Do not cite issue/ticket numbers in documentation prose or in docstrings. Both
+  describe how the software behaves, not the tracker items that shaped it; issue
+  numbers belong in commit messages, PR descriptions, and (only as a supporting
+  reference, never as the whole comment) inline `#` code comments.
+- This prohibition covers the documentation the package publishes: the README,
+  the user and developer guides, the how-to pages, and docstrings. It does not
+  cover `plans/` or `critiques/`, including their `archive/` subdirectories and
+  the README that indexes each one. Those are project records rather than
+  package documentation, and naming the issue that owns a piece of work is what
+  they are for: a plan states which issues a phase closes and which it leaves
+  open, and an archive index states which issues each retired document carried
+  forward. Cite freely there.
+- Do not use unicode smart quotes, em-dashes, or arrows inside `.py` files
+  (they are acceptable in `.rst` and `.md`).
+
+## 3. Sphinx Configuration (`conf.py`)
+
+A single `conf.py` configures the whole tree. It MUST:
+
+- Put the importable source root on `sys.path` so `autodoc` can import the
+  package without an install step on the doc builder.
+- Derive the version from installed package metadata (e.g.
+  `importlib.metadata.version`) rather than hard-coding a version string.
+- Enable, at minimum, these extensions:
+  - `sphinx.ext.autodoc` — pull API docs from docstrings.
+  - `sphinx.ext.napoleon` — parse Google-style docstrings.
+  - `sphinx.ext.viewcode` — link API docs to highlighted source.
+  - `sphinx.ext.intersphinx` — cross-link to the docs of Python and key
+    third-party dependencies; populate `intersphinx_mapping` accordingly.
+  - `myst_parser` — include Markdown files (the `README`).
+  - A diagram extension (e.g. `sphinxcontrib.mermaid`) when the guides use
+    diagrams; configure it for headless/client-side rendering so CI needs no
+    browser.
+- Set `source_suffix` to include both `.rst` and `.md`.
+- Configure Napoleon for Google-style docstrings (`napoleon_google_docstring`,
+  `napoleon_use_param`, `napoleon_use_rtype`).
+- Mock optional/heavy imports that are unavailable on the doc builder (GUI
+  toolkits, backends) via `autodoc_mock_imports` so `autodoc` can import every
+  module headlessly.
+- Use `nitpick_ignore` / `nitpick_ignore_regex` ONLY for symbols that
+  genuinely have no resolvable target (third-party packages without a Sphinx
+  inventory, typing internals leaked by `autodoc`, sibling packages outside the
+  public API). Every entry MUST carry a comment explaining why it cannot be
+  linked. Never silence a nitpick warning for a symbol you actually own.
+
+## 4. Docstrings
+
+- EVERY module, class, method, and function MUST have a descriptive docstring.
+- Follow **PEP 257** using **Google style** with `Parameters:` (not `Args:`).
+- Include `Returns:` and `Raises:` only when there are return values or raised
+  exceptions to document.
+- Document observable behavior sufficient to write a black-box test; do not
+  describe internal implementation details.
+- Wrap docstring text to the project's docstring width (commonly **90**
+  characters).
+- The API reference is generated from these docstrings, so a missing or thin
+  docstring is a hole in the published API documentation, not a private matter.
+
+## 5. Cross-Reference Completeness
+
+- EVERY mention of a code object in narrative prose MUST use the appropriate
+  Sphinx cross-reference role so it links to the API reference:
+  - `:class:`~package.module.Class``
+  - `:meth:`~package.module.Class.method``
+  - `:func:`~package.module.func``
+  - `:mod:`package.module``
+  - `:attr:`~package.module.Class.attr``
+  - `:data:`~package.module.NAME``
+  Use `:doc:` to link other documentation pages and `:ref:` for labeled
+  sections.
+- Bare CamelCase or `module.symbol` text in prose is a violation, even when
+  wrapped in inline literals. Inline literals (```` ``) are for YAML/JSON
+  keys, file paths, CLI tokens, environment variables, and shell snippets —
+  not for API symbols.
+- Cross-references are NOT required (and should be omitted) inside
+  `.. code-block::` directives, `::` literal blocks, diagram blocks, and
+  section titles.
+- When a code object is added, removed, or renamed, every cross-reference to it
+  across the whole docs tree MUST be updated in the same change. A rename
+  without reference updates is a documentation regression.
+
+## 6. Build Discipline (warnings as errors AND nitpicky)
+
+Documentation is correct only when it builds clean under BOTH gates:
+
+```bash
+sphinx-build -W -b html docs docs/_build   # warnings-as-errors
+sphinx-build -n -b html docs docs/_build   # nitpicky (catches broken xrefs)
+```
+
+- `-W` promotes every warning (undefined label, duplicate target, malformed
+  directive, broken toctree) to an error.
+- `-n` (nitpicky) flags every cross-reference that does not resolve to a known
+  target — the primary defense against the stale references in Section 5.
+- BOTH must succeed with ZERO warnings before delivering. CI MUST run the same
+  build with the same flags; a doc change that breaks the build is not done.
+- Validate complex diagrams in their authoring tool before committing.
+
+## 7. Change Discipline
+
+- Any code change MUST update the affected docstrings, narrative pages, and the
+  `README` in the same change.
+- NEVER leave stale or contradictory documentation. If a feature is removed,
+  remove its documentation; if it is renamed, rename every reference.
+- A new public module requires a corresponding API-reference entry so it
+  appears in the rendered API surface (see the `doc-dev-guide` skill).
